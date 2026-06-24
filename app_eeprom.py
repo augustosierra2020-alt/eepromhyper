@@ -1,37 +1,47 @@
 import streamlit as st
 import os
 import json
+import io
 from PIL import Image
+from rembg import remove
 
-# --- CONFIGURAÇÃO E CONSTANTES ---
-BASE_DIR = "dados_eeprom" # Pasta raiz onde tudo será salvo
-if not os.path.exists(BASE_DIR):
-    os.makedirs(BASE_DIR)
+# --- CONFIGURAÇÃO DE PASTAS ---
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 st.set_page_config(page_title="EEPROM Master System", layout="wide")
 
-# --- FUNÇÕES DE UTILIDADE (LÓGICA INTELIGENTE) ---
+# --- FUNÇÕES DE UTILIDADE ---
 
 def listar_montadoras():
-    """Retorna lista de pastas na raiz de dados."""
-    return [d for d in os.listdir(BASE_DIR) if os.path.isdir(os.path.join(BASE_DIR, d))]
+    ignorar = ['.git', '.streamlit', '__pycache__', 'dados_eeprom']
+    montadoras = []
+    for d in os.listdir(BASE_DIR):
+        caminho_completo = os.path.join(BASE_DIR, d)
+        if os.path.isdir(caminho_completo) and d not in ignorar:
+            montadoras.append(d)
+    return sorted(montadoras)
 
 def listar_modelos(montadora):
-    """Retorna lista de modelos dentro de uma montadora específica."""
     path = os.path.join(BASE_DIR, montadora)
     if os.path.exists(path):
-        return [d for d in os.listdir(path) if os.path.isdir(os.path.join(path, d))]
+        return sorted([d for d in os.listdir(path) if os.path.isdir(os.path.join(path, d))])
     return []
 
+def buscar_logo_montadora(montadora):
+    extensoes = ['.png', '.jpg', '.jpeg', '.webp']
+    for ext in extensoes:
+        nome_arquivo = f"{montadora} logo{ext}"
+        caminho_logo = os.path.join(BASE_DIR, nome_arquivo)
+        if os.path.exists(caminho_logo):
+            return caminho_logo
+    return None
+
 def salvar_novo_veiculo(montadora, modelo, inicio, intervalo, info_extra, imagem_upload):
-    """Cria a estrutura de pastas e salva os arquivos."""
-    # Caminho: dados_eeprom/VOLVO/Volvo FH 460/
     pasta_modelo = os.path.join(BASE_DIR, montadora.upper(), modelo.strip())
     
     if not os.path.exists(pasta_modelo):
         os.makedirs(pasta_modelo)
     
-    # Salvar Dados de Texto (JSON)
     dados = {
         "posicao_inicio": inicio,
         "intervalo": intervalo,
@@ -40,19 +50,17 @@ def salvar_novo_veiculo(montadora, modelo, inicio, intervalo, info_extra, imagem
     with open(os.path.join(pasta_modelo, "dados.json"), "w", encoding="utf-8") as f:
         json.dump(dados, f, indent=4, ensure_ascii=False)
     
-    # Salvar Imagem
     if imagem_upload:
         img = Image.open(imagem_upload)
         img.save(os.path.join(pasta_modelo, "grafico.png"))
         return True
     return False
 
-# --- INTERFACE (DESIGN AESTHETIC) ---
+# --- INTERFACE VISUAL ---
 
 st.title("🛡️ EEPROM Data Management System")
 st.markdown("---")
 
-# Barra Lateral - Navegação e Filtros
 st.sidebar.header("🔍 Navegação por Baias")
 montadoras_existentes = listar_montadoras()
 
@@ -65,66 +73,95 @@ else:
 modelos_existentes = listar_modelos(escolha_montadora) if escolha_montadora else []
 escolha_modelo = st.sidebar.selectbox("Selecionar Modelo", [""] + modelos_existentes) if escolha_montadora else None
 
-# --- CONTEÚDO PRINCIPAL (VISUALIZAÇÃO) ---
+# --- CONTEÚDO PRINCIPAL ---
 
-if escolha_montadora and escolha_modelo:
-    path_final = os.path.join(BASE_DIR, escolha_montadora, escolha_modelo)
+if escolha_montadora:
+    st.markdown("### Montadora Selecionada")
+    col_logo, col_nome = st.columns([1, 4])
     
-    st.header(f"📍 {escolha_montadora} - {escolha_modelo}")
+    caminho_da_logo = buscar_logo_montadora(escolha_montadora)
     
-    col_img, col_info = st.columns([2, 1])
-    
-    with col_img:
-        img_path = os.path.join(path_final, "grafico.png")
-        if os.path.exists(img_path):
-            st.image(img_path, use_container_width=True, caption=f"Gráfico de Referência: {escolha_modelo}")
+    with col_logo:
+        if caminho_da_logo:
+            # Tenta remover o fundo da imagem
+            with st.spinner("Recortando fundo..."):
+                try:
+                    with open(caminho_da_logo, 'rb') as f:
+                        img_bytes = f.read()
+                    
+                    # A mágica do rembg acontece aqui
+                    resultado_bytes = remove(img_bytes)
+                    logo_recortada = Image.open(io.BytesIO(resultado_bytes))
+                    
+                    st.image(logo_recortada, width=120)
+                except Exception as e:
+                    # Se falhar por algum motivo, mostra a imagem original
+                    st.image(Image.open(caminho_da_logo), width=120)
         else:
-            st.error("⚠️ Imagem do gráfico não encontrada nesta pasta.")
+            st.subheader("🏭")
             
-    with col_info:
-        st.subheader("Informações do Mapa")
-        json_path = os.path.join(path_final, "dados.json")
-        if os.path.exists(json_path):
-            with open(json_path, "r", encoding="utf-8") as f:
-                data = json.load(f)
-            
-            st.write("**Início do Gráfico:**")
-            st.code(data["posicao_inicio"], language="text")
-            
-            st.write("**Intervalo:**")
-            st.code(data["intervalo"], language="text")
-            
-            st.write("**Veículo / Módulo:**")
-            st.info(data["detalhes"])
-        else:
-            st.warning("Dados técnicos não encontrados.")
+    with col_nome:
+        st.markdown(f"<h1 style='margin-top: 10px; color: #1E88E5;'>{escolha_montadora}</h1>", unsafe_allow_html=True)
+    
+    st.markdown("---")
 
+    if escolha_modelo:
+        path_final = os.path.join(BASE_DIR, escolha_montadora, escolha_modelo)
+        st.header(f"📍 Modelo: {escolha_modelo}")
+        
+        col_img, col_info = st.columns([2, 1])
+        
+        with col_img:
+            img_path = os.path.join(path_final, "grafico.png")
+            if os.path.exists(img_path):
+                st.image(img_path, use_container_width=True, caption=f"Gráfico de Referência: {escolha_modelo}")
+            else:
+                st.error("⚠️ Imagem do gráfico não encontrada nesta pasta.")
+                
+        with col_info:
+            st.subheader("Informações do Mapa")
+            json_path = os.path.join(path_final, "dados.json")
+            if os.path.exists(json_path):
+                with open(json_path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                
+                st.write("**Início do Gráfico:**")
+                st.code(data["posicao_inicio"], language="text")
+                
+                st.write("**Intervalo:**")
+                st.code(data["intervalo"], language="text")
+                
+                st.write("**Veículo / Módulo:**")
+                st.info(data["detalhes"])
+            else:
+                st.warning("Dados técnicos não encontrados.")
+    else:
+        st.info(f"Agora selecione um **Modelo** da {escolha_montadora} na barra lateral para ver o gráfico.")
 else:
-    st.info("👋 Selecione uma montadora e modelo na lateral para visualizar os dados.")
+    st.info("👋 Selecione uma montadora e um modelo na barra lateral para começar.")
 
-# --- SEÇÃO ADMINISTRATIVA (ADICIONAR NOVOS) ---
+# --- SEÇÃO ADMINISTRATIVA ---
 st.markdown("---")
 with st.expander("➕ ÁREA ADMINISTRATIVA: Adicionar Montadoras e Veículos"):
-    
     adm_col1, adm_col2 = st.columns(2)
     
     with adm_col1:
         st.subheader("Nova Montadora")
-        nova_m = st.text_input("Nome da Montadora (ex: VOLKSWAGEN, SCANIA)").upper()
-        if st.button("Criar Baia da Montadora"):
+        nova_m = st.text_input("Nome da Montadora (ex: VOLKSWAGEN, DAF, VOLVO)").upper().strip()
+        if st.button("Criar Pasta da Montadora"):
             if nova_m:
                 path_m = os.path.join(BASE_DIR, nova_m)
                 if not os.path.exists(path_m):
                     os.makedirs(path_m)
-                    st.success(f"Montadora {nova_m} criada!")
+                    st.success(f"Pasta '{nova_m}' criada com sucesso!")
                     st.rerun()
                 else:
-                    st.warning("Essa montadora já existe.")
+                    st.warning("Esta montadora já existe.")
             else:
                 st.error("Digite um nome válido.")
 
     with adm_col2:
-        st.subheader("Novo Veículo (Redirecionamento Inteligente)")
+        st.subheader("Novo Veículo")
         if not montadoras_existentes:
             st.warning("Crie uma montadora primeiro.")
         else:
@@ -142,7 +179,7 @@ with st.expander("➕ ÁREA ADMINISTRATIVA: Adicionar Montadoras e Veículos"):
                 if m_selecionada and v_nome and v_img:
                     sucesso = salvar_novo_veiculo(m_selecionada, v_nome, v_inicio, v_intervalo, v_info, v_img)
                     if sucesso:
-                        st.success(f"Veículo {v_nome} salvo com sucesso em {m_selecionada}!")
+                        st.success(f"Veículo {v_nome} salvo em {m_selecionada}!")
                         st.rerun()
                 else:
-                    st.error("Preencha todos os campos e suba a imagem.")
+                    st.error("Preencha todos os campos e faça o upload da imagem.")
