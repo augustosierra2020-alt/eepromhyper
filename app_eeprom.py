@@ -31,15 +31,23 @@ def listar_modelos(montadora):
     return []
 
 def buscar_logo_montadora(montadora):
-    extensoes = ['.png', '.jpg', '.jpeg', '.webp']
-    for ext in extensoes:
-        nome_arquivo = f"{montadora} logo{ext}"
-        caminho_logo = os.path.join(LOGOS_DIR, nome_arquivo)
-        if os.path.exists(caminho_logo):
-            return caminho_logo
+    """
+    Busca a logo ignorando se a extensão está em maiúsculo ou minúsculo.
+    O nome do arquivo deve ser exatamente: NOMEDAMONTADORA logo.extensao
+    """
+    # Lista todos os arquivos da pasta logos para fazer uma busca inteligente
+    if os.path.exists(LOGOS_DIR):
+        arquivos = os.listdir(LOGOS_DIR)
+        nome_alvo = f"{montadora.upper()} LOGO"
+        
+        for arquivo in arquivos:
+            nome_sem_ext, _ = os.path.splitext(arquivo)
+            # Remove espaços extras e joga para maiúsculo para comparar
+            if nome_sem_ext.strip().upper() == nome_alvo:
+                return os.path.join(LOGOS_DIR, arquivo)
     return None
 
-def salvar_novo_veiculo(montadora, modelo, inicio, intervalo, info_extra, imagem_upload):
+def salvar_novo_veiculo(montadora, modelo, inicio, intervalo, info_extra, imagens_upload):
     pasta_modelo = os.path.join(BASE_DIR, montadora.upper(), modelo.strip())
     
     if not os.path.exists(pasta_modelo):
@@ -53,9 +61,12 @@ def salvar_novo_veiculo(montadora, modelo, inicio, intervalo, info_extra, imagem
     with open(os.path.join(pasta_modelo, "dados.json"), "w", encoding="utf-8") as f:
         json.dump(dados, f, indent=4, ensure_ascii=False)
     
-    if imagem_upload:
-        img = Image.open(imagem_upload)
-        img.save(os.path.join(pasta_modelo, "grafico.png"))
+    # Salvar as imagens enviadas (aceita até 2)
+    if imagens_upload:
+        for idx, img_file in enumerate(imagens_upload[:2]):
+            img = Image.open(img_file)
+            # Salva como grafico_1.png e grafico_2.png
+            img.save(os.path.join(pasta_modelo, f"grafico_{idx+1}.png"))
         return True
     return False
 
@@ -86,9 +97,11 @@ if escolha_montadora:
     
     with col_logo:
         if caminho_da_logo:
-            # Carrega a imagem diretamente de forma super rápida
-            logo_img = Image.open(caminho_da_logo)
-            st.image(logo_img, width=120)
+            try:
+                logo_img = Image.open(caminho_da_logo)
+                st.image(logo_img, width=120)
+            except:
+                st.subheader("⚠️ Erro Img")
         else:
             st.subheader("🏭")
             
@@ -101,14 +114,29 @@ if escolha_montadora:
         path_final = os.path.join(BASE_DIR, escolha_montadora, escolha_modelo)
         st.header(f"📍 Modelo: {escolha_modelo}")
         
+        # Redirecionamento inteligente de layouts para os gráficos
+        # Verifica quais imagens existem na pasta (grafico_1.png, grafico_2.png ou o antigo grafico.png)
+        graficos_encontrados = []
+        for nome_img in ["grafico_1.png", "grafico_2.png", "grafico.png"]:
+            p = os.path.join(path_final, nome_img)
+            if os.path.exists(p):
+                graficos_encontrados.append(p)
+
         col_img, col_info = st.columns([2, 1])
         
         with col_img:
-            img_path = os.path.join(path_final, "grafico.png")
-            if os.path.exists(img_path):
-                st.image(img_path, use_container_width=True, caption=f"Gráfico de Referência: {escolha_modelo}")
+            if not graficos_encontrados:
+                st.error("⚠️ Nenhuma imagem de gráfico encontrada nesta pasta.")
+            elif len(graficos_encontrados) == 1:
+                # Se só tem 1 imagem, expande ela na tela inteira designada
+                st.image(graficos_encontrados[0], use_container_width=True, caption="Gráfico de Referência")
             else:
-                st.error("⚠️ Imagem do gráfico não encontrada nesta pasta.")
+                # Se tem 2 imagens, divide o espaço em duas subcolunas perfeitamente alinhadas
+                sub_col1, sub_col2 = st.columns(2)
+                with sub_col1:
+                    st.image(graficos_encontrados[0], use_container_width=True, caption="Gráfico Principal (1)")
+                with sub_col2:
+                    st.image(graficos_encontrados[1], use_container_width=True, caption="Gráfico Complementar (2)")
                 
         with col_info:
             st.subheader("Informações do Mapa")
@@ -165,13 +193,15 @@ with st.expander("➕ ÁREA ADMINISTRATIVA: Adicionar Montadoras e Veículos"):
             v_intervalo = c2.text_input("Intervalo (ex: 0x7F000 - 0x7F5FF)")
             
             v_info = st.text_area("Dados do Veículo / Motor")
-            v_img = st.file_uploader("Upload do Gráfico de Referência", type=["png", "jpg", "jpeg"])
+            
+            # ATUALIZADO: accept_multiple_files=True permite arrastar até duas imagens de uma vez
+            v_imgs = st.file_uploader("Upload dos Gráficos de Referência (Máx. 2)", type=["png", "jpg", "jpeg"], accept_multiple_files=True)
             
             if st.button("Salvar Veículo na Pasta"):
-                if m_selecionada and v_nome and v_img:
-                    sucesso = salvar_novo_veiculo(m_selecionada, v_nome, v_inicio, v_intervalo, v_info, v_img)
+                if m_selecionada and v_nome and v_imgs:
+                    sucesso = salvar_novo_veiculo(m_selecionada, v_nome, v_inicio, v_intervalo, v_info, v_imgs)
                     if sucesso:
-                        st.success(f"Veículo {v_nome} salvo em {m_selecionada}!")
+                        st.success(f"Veículo {v_nome} salvo em {m_selecionada} com seus gráficos!")
                         st.rerun()
                 else:
-                    st.error("Preencha todos os campos e faça o upload da imagem.")
+                    st.error("Preencha todos os campos e faça o upload de pelo menos uma imagem.")
