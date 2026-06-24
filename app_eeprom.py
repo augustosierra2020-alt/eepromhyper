@@ -1,14 +1,12 @@
 import streamlit as st
 import os
 import json
-from PIL import Image
+from PIL import Image, ImageOps  # Importado ImageOps para a correção automática de contraste
 
 # --- FORÇAR DIRETÓRIO RAIZ CORRETO ---
-# Isso garante que o Python use a pasta exata onde o app.py está salvo, evitando erros de terminal
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 def mapear_pasta_logos(base):
-    # Procura por qualquer variação de nome de pasta
     for d in os.listdir(base):
         if d.lower() in ['logos', 'logo'] and os.path.isdir(os.path.join(base, d)):
             return os.path.join(base, d)
@@ -16,7 +14,6 @@ def mapear_pasta_logos(base):
 
 LOGOS_DIR = mapear_pasta_logos(BASE_DIR)
 
-# Garante a criação caso não exista
 if not os.path.exists(LOGOS_DIR):
     os.makedirs(LOGOS_DIR)
 
@@ -46,20 +43,30 @@ def listar_modelos(montadora):
     return []
 
 def buscar_logo_montadora_automatica(montadora):
-    """
-    BUSCA AUTOMÁTICA EM TEMPO REAL:
-    Vasculha a pasta Logos e traz qualquer imagem que contenha o nome da montadora.
-    """
     if os.path.exists(LOGOS_DIR):
         arquivos = os.listdir(LOGOS_DIR)
         mont_alvo = montadora.strip().upper()
         
         for arquivo in arquivos:
             arq_upper = arquivo.upper()
-            # Se o nome da montadora estiver na imagem, ele valida automaticamente
             if mont_alvo in arq_upper and arq_upper.endswith(('.PNG', '.JPG', '.JPEG', '.WEBP')):
                 return os.path.join(LOGOS_DIR, arquivo)
     return None
+
+def carregar_e_otimizar_logo(caminho_logo):
+    """
+    FUNÇÃO DE AUTO-CORREÇÃO VISUAL:
+    Pega imagens brancas ocultas (como os JPEGs do Canva)
+    e força os contornos invisíveis a ficarem escuros e nítidos.
+    """
+    try:
+        img = Image.open(caminho_logo)
+        gray = img.convert('L')
+        # Puxa o cinza oculto do fantasma da logo para o preto nítido
+        otimizada = ImageOps.autocontrast(gray, cutoff=0)
+        return otimizada.convert('RGB')
+    except:
+        return Image.open(caminho_logo)
 
 def salvar_novo_veiculo(montadora, modelo, inicio, intervalo, info_extra, imagens_upload):
     pasta_modelo = os.path.join(BASE_DIR, montadora.upper(), modelo.strip())
@@ -77,11 +84,24 @@ def salvar_novo_veiculo(montadora, modelo, inicio, intervalo, info_extra, imagen
         return True
     return False
 
-# --- ESTILIZAÇÃO CSS PARA ALINHAMENTO ---
+# --- ESTILIZAÇÃO CSS PARA ALINHAMENTO E SIMETRIA PERFEITA ---
 st.markdown("""
     <style>
     .block-container { padding-top: 2rem; }
-    .montadora-card { text-align: center; padding: 10px; border-radius: 10px; background-color: #f0f2f6; margin-bottom: 10px; }
+    
+    /* Centraliza e padroniza a proporção original das logos no Grid para alinhamento horizontal */
+    [data-testid="stImage"] img {
+        display: block;
+        margin-left: auto;
+        margin-right: auto;
+        max-height: 100px;
+        object-fit: contain;
+    }
+    
+    /* Uniformiza o espaçamento dos botões dos Cards */
+    div.stButton > button {
+        margin-top: 8px;
+    }
     </style>
 """, unsafe_allow_html=True)
 
@@ -94,7 +114,7 @@ if st.sidebar.button("🏠 Voltar para Tela Inicial", use_container_width=True):
 st.sidebar.markdown("---")
 montadoras_existentes = listar_montadoras()
 
-# --- TELA INICIAL: DASHBOARD COM SELEÇÃO DIRETA ---
+# --- TELA INICIAL: DASHBOARD COM GRID ALINHADO ---
 if st.session_state.montadora_selecionada == "":
     st.title("🚜 Painel de Controle - Baias EEPROM")
     st.markdown("### Escolha a Montadora desejada para abrir os modelos")
@@ -103,29 +123,26 @@ if st.session_state.montadora_selecionada == "":
     if not montadoras_existentes:
         st.info("Nenhuma montadora cadastrada nas pastas. Use a área administrativa abaixo.")
     else:
-        # Cria o grid alinhado de montadoras
+        # Cria o grid alinhado simétrico de montadoras
         cols = st.columns(4)
         for i, m in enumerate(montadoras_existentes):
             with cols[i % 4]:
-                caminho_logo = buscar_logo_montadora_automatica(m)
-                
-                # Renderiza a logo ou aviso centralizado e alinhado
-                if caminho_logo:
-                    try:
-                        img_home = Image.open(caminho_logo)
-                        st.image(img_home, width=150)
-                    except:
-                        st.error("Erro ao ler arquivo")
-                else:
-                    # Se não achar, mostra o nome grande estilizado para não ficar desalinhado
-                    st.info(f"🏭 {m} (Sem imagem na pasta Logos)")
-                
-                # Botão de clique para abrir
-                if st.button(f"Abrir {m}", key=f"home_{m}", use_container_width=True):
-                    st.session_state.montadora_selecionada = m
-                    st.rerun()
+                # st.container(border=True) cria uma "baia" visual perfeita para cada marca
+                with st.container(border=True):
+                    caminho_logo = buscar_logo_montadora_automatica(m)
+                    
+                    if caminho_logo:
+                        img_home = carregar_e_otimizar_logo(caminho_logo)
+                        st.image(img_home, width=120)
+                    else:
+                        st.markdown(f"<p style='text-align:center; margin:20px 0; font-weight:bold;'>🏭 {m}</p>", unsafe_allow_html=True)
+                    
+                    # Botão de clique integrado perfeitamente ao Card
+                    if st.button(f"Abrir {m}", key=f"home_{m}", use_container_width=True):
+                        st.session_state.montadora_selecionada = m
+                        st.rerun()
 
-    # DIAGNÓSTICO DAS LOGOS (Aparece apenas na tela inicial para te ajudar a corrigir)
+    # DIAGNÓSTICO DAS LOGOS
     with st.sidebar.expander("🔍 Diagnóstico Técnico de Imagens"):
         st.write(f"**Pasta Atual:** `{BASE_DIR}`")
         st.write(f"**Procurando em:** `{LOGOS_DIR}`")
@@ -143,7 +160,8 @@ else:
     
     with col_logo:
         if caminho_da_logo:
-            st.image(Image.open(caminho_da_logo), width=100)
+            img_interna = carregar_e_otimizar_logo(caminho_da_logo)
+            st.image(img_interna, width=90)
         else:
             st.subheader("🏭")
             
@@ -158,11 +176,12 @@ else:
     if not modelos_existentes:
         st.warning(f"Nenhum veículo cadastrado para a montadora {st.session_state.montadora_selecionada}. Cadastre um modelo abaixo.")
     else:
-        # Seletor de modelos centralizado e em destaque na tela principal
-        escolha_modelo = st.selectbox("📂 Escolha o Modelo/Veículo para ver o gráfico:", [""] + modelos_existentes)
+        st.markdown("### 📂 Selecione o Veículo para carregar os gráficos imediatamente:")
+        escolha_modelo = st.selectbox("", [""] + modelos_existentes, label_visibility="collapsed")
+        st.write("")
         
         if escolha_modelo:
-            st.markdown(f"### 📍 Visualizando: {escolha_modelo}")
+            st.markdown(f"#### 📍 Mapa: {st.session_state.montadora_selecionada} {escolha_modelo}")
             path_final = os.path.join(BASE_DIR, st.session_state.montadora_selecionada, escolha_modelo)
             
             graficos_encontrados = []
@@ -170,7 +189,7 @@ else:
                 p = os.path.join(path_final, nome_img)
                 if os.path.exists(p): graficos_encontrados.append(p)
 
-            # Divisão em duas colunas: Gráficos na Esquerda (Grande), Dados na Direita (Painel Fixo)
+            # Divisão em duas colunas assimétricas profissionais (Gráfico grande, Ficha técnica compacta)
             col_img, col_info = st.columns([2, 1])
             
             with col_img:
@@ -180,23 +199,24 @@ else:
                     st.image(graficos_encontrados[0], use_container_width=True)
                 else:
                     sub1, sub2 = st.columns(2)
-                    sub1.image(graficos_encontrados[0], use_container_width=True, caption="Gráfico 1")
-                    sub2.image(graficos_encontrados[1], use_container_width=True, caption="Gráfico 2")
+                    sub1.image(graficos_encontrados[0], use_container_width=True, caption="Gráfico Principal (1)")
+                    sub2.image(graficos_encontrados[1], use_container_width=True, caption="Gráfico Complementar (2)")
                     
             with col_info:
-                st.subheader("📋 Informações do Mapa")
-                json_path = os.path.join(path_final, "dados.json")
-                if os.path.exists(json_path):
-                    with open(json_path, "r", encoding="utf-8") as f:
-                        data = json.load(f)
-                    st.write("**Início do Gráfico:**")
-                    st.code(data["posicao_inicio"], language="text")
-                    st.write("**Intervalo de Endereços:**")
-                    st.code(data["intervalo"], language="text")
-                    st.write("**Detalhes do Veículo:**")
-                    st.info(data["detalhes"])
-                else:
-                    st.warning("Arquivo dados.json ausente.")
+                with st.container(border=True):
+                    st.subheader("📋 Informações do Mapa")
+                    json_path = os.path.join(path_final, "dados.json")
+                    if os.path.exists(json_path):
+                        with open(json_path, "r", encoding="utf-8") as f:
+                            data = json.load(f)
+                        st.write("**Início do Gráfico:**")
+                        st.code(data["posicao_inicio"], language="text")
+                        st.write("**Intervalo de Endereços:**")
+                        st.code(data["intervalo"], language="text")
+                        st.write("**Detalhes do Veículo:**")
+                        st.info(data["detalhes"])
+                    else:
+                        st.warning("Arquivo dados.json ausente.")
 
 # --- SEÇÃO ADMINISTRATIVA ---
 st.markdown("<br><br>", unsafe_allow_html=True)
