@@ -1,7 +1,7 @@
 import streamlit as st
 import os
 import json
-from PIL import Image, ImageOps  # Importado ImageOps para a correção automática de contraste
+from PIL import Image
 
 # --- FORÇAR DIRETÓRIO RAIZ CORRETO ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -53,21 +53,6 @@ def buscar_logo_montadora_automatica(montadora):
                 return os.path.join(LOGOS_DIR, arquivo)
     return None
 
-def carregar_e_otimizar_logo(caminho_logo):
-    """
-    FUNÇÃO DE AUTO-CORREÇÃO VISUAL:
-    Pega imagens brancas ocultas (como os JPEGs do Canva)
-    e força os contornos invisíveis a ficarem escuros e nítidos.
-    """
-    try:
-        img = Image.open(caminho_logo)
-        gray = img.convert('L')
-        # Puxa o cinza oculto do fantasma da logo para o preto nítido
-        otimizada = ImageOps.autocontrast(gray, cutoff=0)
-        return otimizada.convert('RGB')
-    except:
-        return Image.open(caminho_logo)
-
 def salvar_novo_veiculo(montadora, modelo, inicio, intervalo, info_extra, imagens_upload):
     pasta_modelo = os.path.join(BASE_DIR, montadora.upper(), modelo.strip())
     if not os.path.exists(pasta_modelo):
@@ -89,7 +74,7 @@ st.markdown("""
     <style>
     .block-container { padding-top: 2rem; }
     
-    /* Centraliza e padroniza a proporção original das logos no Grid para alinhamento horizontal */
+    /* Centraliza e padroniza a proporção original das logos no Grid */
     [data-testid="stImage"] img {
         display: block;
         margin-left: auto;
@@ -98,7 +83,6 @@ st.markdown("""
         object-fit: contain;
     }
     
-    /* Uniformiza o espaçamento dos botões dos Cards */
     div.stButton > button {
         margin-top: 8px;
     }
@@ -123,22 +107,22 @@ if st.session_state.montadora_selecionada == "":
     if not montadoras_existentes:
         st.info("Nenhuma montadora cadastrada nas pastas. Use a área administrativa abaixo.")
     else:
-        # Cria o grid alinhado simétrico de montadoras
         cols = st.columns(4)
         for i, m in enumerate(montadoras_existentes):
             with cols[i % 4]:
-                # st.container(border=True) cria uma "baia" visual perfeita para cada marca
                 with st.container(border=True):
                     caminho_logo = buscar_logo_montadora_automatica(m)
                     
                     if caminho_logo:
-                        img_home = carregar_e_otimizar_logo(caminho_logo)
-                        st.image(img_home, width=120)
+                        try:
+                            img_home = Image.open(caminho_logo)
+                            st.image(img_home, width=120)
+                        except:
+                            st.error("Erro ao ler arquivo")
                     else:
                         st.markdown(f"<p style='text-align:center; margin:20px 0; font-weight:bold;'>🏭 {m}</p>", unsafe_allow_html=True)
                     
-                    # Botão de clique integrado perfeitamente ao Card
-                    if st.button(f"Abrir {m}", key=f"home_{m}", use_container_width=True):
+                    if st.button("Abrir Baia", key=f"home_{m}", use_container_width=True):
                         st.session_state.montadora_selecionada = m
                         st.rerun()
 
@@ -152,16 +136,14 @@ if st.session_state.montadora_selecionada == "":
         else:
             st.write("❌ Pasta de Logos não detectada!")
 
-# --- TELA INTERNA: JÁ EXIBE OS MODELOS DISPONÍVEIS IMEDIATAMENTE ---
+# --- TELA INTERNA: EXIBE OS MODELOS DISPONÍVEIS IMEDIATAMENTE ---
 else:
-    # Cabeçalho alinhado: Logo na esquerda, Nome na direita
     col_logo, col_nome = st.columns([1, 5])
     caminho_da_logo = buscar_logo_montadora_automatica(st.session_state.montadora_selecionada)
     
     with col_logo:
         if caminho_da_logo:
-            img_interna = carregar_e_otimizar_logo(caminho_da_logo)
-            st.image(img_interna, width=90)
+            st.image(Image.open(caminho_da_logo), width=90)
         else:
             st.subheader("🏭")
             
@@ -170,7 +152,6 @@ else:
     
     st.markdown("---")
 
-    # CARREGAMENTO DOS MODELOS DIRETO NA TELA
     modelos_existentes = listar_modelos(st.session_state.montadora_selecionada)
     
     if not modelos_existentes:
@@ -189,7 +170,6 @@ else:
                 p = os.path.join(path_final, nome_img)
                 if os.path.exists(p): graficos_encontrados.append(p)
 
-            # Divisão em duas colunas assimétricas profissionais (Gráfico grande, Ficha técnica compacta)
             col_img, col_info = st.columns([2, 1])
             
             with col_img:
