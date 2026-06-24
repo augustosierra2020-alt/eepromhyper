@@ -3,17 +3,23 @@ import os
 import json
 import io
 from PIL import Image
-from rembg import remove
+from rembg import remove, new_session
 
 # --- CONFIGURAÇÃO DE PASTAS ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+LOGOS_DIR = os.path.join(BASE_DIR, "logos") # Nova pasta exclusiva para as logos
+
+# Garante que a pasta de logos exista
+if not os.path.exists(LOGOS_DIR):
+    os.makedirs(LOGOS_DIR)
 
 st.set_page_config(page_title="EEPROM Master System", layout="wide")
 
 # --- FUNÇÕES DE UTILIDADE ---
 
 def listar_montadoras():
-    ignorar = ['.git', '.streamlit', '__pycache__', 'dados_eeprom']
+    # Adicionamos 'logos' na lista de pastas para o programa ignorar ao listar montadoras
+    ignorar = ['.git', '.streamlit', '__pycache__', 'dados_eeprom', 'logos']
     montadoras = []
     for d in os.listdir(BASE_DIR):
         caminho_completo = os.path.join(BASE_DIR, d)
@@ -31,7 +37,8 @@ def buscar_logo_montadora(montadora):
     extensoes = ['.png', '.jpg', '.jpeg', '.webp']
     for ext in extensoes:
         nome_arquivo = f"{montadora} logo{ext}"
-        caminho_logo = os.path.join(BASE_DIR, nome_arquivo)
+        # A IA agora procura a imagem estritamente dentro da pasta 'logos'
+        caminho_logo = os.path.join(LOGOS_DIR, nome_arquivo)
         if os.path.exists(caminho_logo):
             return caminho_logo
     return None
@@ -83,19 +90,19 @@ if escolha_montadora:
     
     with col_logo:
         if caminho_da_logo:
-            # Tenta remover o fundo da imagem
-            with st.spinner("Recortando fundo..."):
+            with st.spinner("Processando IA leve (4MB)..."):
                 try:
                     with open(caminho_da_logo, 'rb') as f:
                         img_bytes = f.read()
                     
-                    # A mágica do rembg acontece aqui
-                    resultado_bytes = remove(img_bytes)
-                    logo_recortada = Image.open(io.BytesIO(resultado_bytes))
+                    # Cria a sessão usando o modelo ultraleve "u2netp"
+                    sessao_leve = new_session("u2netp")
+                    resultado_bytes = remove(img_bytes, session=sessao_leve)
                     
+                    logo_recortada = Image.open(io.BytesIO(resultado_bytes))
                     st.image(logo_recortada, width=120)
                 except Exception as e:
-                    # Se falhar por algum motivo, mostra a imagem original
+                    # Se falhar, carrega a imagem normal
                     st.image(Image.open(caminho_da_logo), width=120)
         else:
             st.subheader("🏭")
