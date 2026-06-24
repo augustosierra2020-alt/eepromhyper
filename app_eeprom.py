@@ -5,9 +5,9 @@ from PIL import Image
 
 # --- CONFIGURAÇÃO DE PASTAS ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-LOGOS_DIR = os.path.join(BASE_DIR, "logos")
+LOGOS_DIR = os.path.join(BASE_DIR, "logos") # Padrão universal: 'logos'
 
-# Garante que a pasta de logos exista
+# Garante que a pasta de logos exista localmente
 if not os.path.exists(LOGOS_DIR):
     os.makedirs(LOGOS_DIR)
 
@@ -16,7 +16,7 @@ st.set_page_config(page_title="EEPROM Master System", layout="wide")
 # --- FUNÇÕES DE UTILIDADE ---
 
 def listar_montadoras():
-    ignorar = ['.git', '.streamlit', '__pycache__', 'dados_eeprom', 'logos']
+    ignorar = ['.git', '.streamlit', '__pycache__', 'dados_eeprom', 'logos', 'logo', 'Logos']
     montadoras = []
     for d in os.listdir(BASE_DIR):
         caminho_completo = os.path.join(BASE_DIR, d)
@@ -31,18 +31,15 @@ def listar_modelos(montadora):
     return []
 
 def buscar_logo_montadora(montadora):
-    """
-    Busca a logo ignorando se a extensão está em maiúsculo ou minúsculo.
-    O nome do arquivo deve ser exatamente: NOMEDAMONTADORA logo.extensao
-    """
-    # Lista todos os arquivos da pasta logos para fazer uma busca inteligente
+    """Busca a logo na pasta 'logos' de forma extremamente tolerante a erros de nome."""
     if os.path.exists(LOGOS_DIR):
         arquivos = os.listdir(LOGOS_DIR)
-        nome_alvo = f"{montadora.upper()} LOGO"
+        # Transforma o padrão que buscamos em: "DAF LOGO"
+        nome_alvo = f"{montadora.strip().upper()} LOGO"
         
         for arquivo in arquivos:
             nome_sem_ext, _ = os.path.splitext(arquivo)
-            # Remove espaços extras e joga para maiúsculo para comparar
+            # Compara ignorando espaços extras e maiúsculas/minúsculas
             if nome_sem_ext.strip().upper() == nome_alvo:
                 return os.path.join(LOGOS_DIR, arquivo)
     return None
@@ -61,11 +58,9 @@ def salvar_novo_veiculo(montadora, modelo, inicio, intervalo, info_extra, imagen
     with open(os.path.join(pasta_modelo, "dados.json"), "w", encoding="utf-8") as f:
         json.dump(dados, f, indent=4, ensure_ascii=False)
     
-    # Salvar as imagens enviadas (aceita até 2)
     if imagens_upload:
         for idx, img_file in enumerate(imagens_upload[:2]):
             img = Image.open(img_file)
-            # Salva como grafico_1.png e grafico_2.png
             img.save(os.path.join(pasta_modelo, f"grafico_{idx+1}.png"))
         return True
     return False
@@ -79,7 +74,7 @@ st.sidebar.header("🔍 Navegação por Baias")
 montadoras_existentes = listar_montadoras()
 
 if not montadoras_existentes:
-    st.sidebar.warning("Nenhuma montadora cadastrada.")
+    st.sidebar.warning("Nenhuma montadora cadastrada nas pastas.")
     escolha_montadora = None
 else:
     escolha_montadora = st.sidebar.selectbox("Selecionar Montadora", [""] + montadoras_existentes)
@@ -101,9 +96,9 @@ if escolha_montadora:
                 logo_img = Image.open(caminho_da_logo)
                 st.image(logo_img, width=120)
             except:
-                st.subheader("⚠️ Erro Img")
+                st.subheader("⚠️ Erro na Imagem")
         else:
-            st.subheader("🏭")
+            st.subheader("🏭") # Mostra a fábrica se não achar a logo
             
     with col_nome:
         st.markdown(f"<h1 style='margin-top: 10px; color: #1E88E5;'>{escolha_montadora}</h1>", unsafe_allow_html=True)
@@ -114,8 +109,6 @@ if escolha_montadora:
         path_final = os.path.join(BASE_DIR, escolha_montadora, escolha_modelo)
         st.header(f"📍 Modelo: {escolha_modelo}")
         
-        # Redirecionamento inteligente de layouts para os gráficos
-        # Verifica quais imagens existem na pasta (grafico_1.png, grafico_2.png ou o antigo grafico.png)
         graficos_encontrados = []
         for nome_img in ["grafico_1.png", "grafico_2.png", "grafico.png"]:
             p = os.path.join(path_final, nome_img)
@@ -128,10 +121,8 @@ if escolha_montadora:
             if not graficos_encontrados:
                 st.error("⚠️ Nenhuma imagem de gráfico encontrada nesta pasta.")
             elif len(graficos_encontrados) == 1:
-                # Se só tem 1 imagem, expande ela na tela inteira designada
                 st.image(graficos_encontrados[0], use_container_width=True, caption="Gráfico de Referência")
             else:
-                # Se tem 2 imagens, divide o espaço em duas subcolunas perfeitamente alinhadas
                 sub_col1, sub_col2 = st.columns(2)
                 with sub_col1:
                     st.image(graficos_encontrados[0], use_container_width=True, caption="Gráfico Principal (1)")
@@ -156,7 +147,7 @@ if escolha_montadora:
             else:
                 st.warning("Dados técnicos não encontrados.")
     else:
-        st.info(f"Agora selecione um **Modelo** da {escolha_montadora} na barra lateral para ver o gráfico.")
+        st.info(f"Agora selecione um **Modelo** da {escolha_montadora} na barra lateral para ver os gráfico(s).")
 else:
     st.info("👋 Selecione uma montadora e um modelo na barra lateral para começar.")
 
@@ -193,9 +184,7 @@ with st.expander("➕ ÁREA ADMINISTRATIVA: Adicionar Montadoras e Veículos"):
             v_intervalo = c2.text_input("Intervalo (ex: 0x7F000 - 0x7F5FF)")
             
             v_info = st.text_area("Dados do Veículo / Motor")
-            
-            # ATUALIZADO: accept_multiple_files=True permite arrastar até duas imagens de uma vez
-            v_imgs = st.file_uploader("Upload dos Gráficos de Referência (Máx. 2)", type=["png", "jpg", "jpeg"], accept_multiple_files=True)
+            v_imgs = st.file_uploader("Upload dos Gráficos de Referência (Suba 1 ou 2 de uma vez)", type=["png", "jpg", "jpeg"], accept_multiple_files=True)
             
             if st.button("Salvar Veículo na Pasta"):
                 if m_selecionada and v_nome and v_imgs:
@@ -204,4 +193,4 @@ with st.expander("➕ ÁREA ADMINISTRATIVA: Adicionar Montadoras e Veículos"):
                         st.success(f"Veículo {v_nome} salvo em {m_selecionada} com seus gráficos!")
                         st.rerun()
                 else:
-                    st.error("Preencha todos os campos e faça o upload de pelo menos uma imagem.")
+                    st.error("Preencha todos os campos e envie as imagens.")
