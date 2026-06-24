@@ -3,29 +3,30 @@ import os
 import json
 from PIL import Image
 
-# --- CONFIGURAÇÃO DE PASTAS ---
+# --- FORÇAR DIRETÓRIO RAIZ CORRETO ---
+# Isso garante que o Python use a pasta exata onde o app.py está salvo, evitando erros de terminal
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-# Busca inteligente pela pasta de Logos (aceita logo, Logos, logos, LOGOS)
-def encontrar_pasta_logos(base):
+def mapear_pasta_logos(base):
+    # Procura por qualquer variação de nome de pasta
     for d in os.listdir(base):
         if d.lower() in ['logos', 'logo'] and os.path.isdir(os.path.join(base, d)):
             return os.path.join(base, d)
-    # Se não achar nenhuma, define como 'Logos' por padrão
     return os.path.join(base, "Logos")
 
-LOGOS_DIR = encontrar_pasta_logos(BASE_DIR)
+LOGOS_DIR = mapear_pasta_logos(BASE_DIR)
 
+# Garante a criação caso não exista
 if not os.path.exists(LOGOS_DIR):
     os.makedirs(LOGOS_DIR)
 
 st.set_page_config(page_title="EEPROM Master System", layout="wide")
 
-# --- ESTADO DO SISTEMA (Navegação) ---
+# --- ESTADO DE NAVEGAÇÃO ---
 if 'montadora_selecionada' not in st.session_state:
     st.session_state.montadora_selecionada = ""
 
-# --- FUNÇÕES DE UTILIDADE ---
+# --- FUNÇÕES ---
 
 def listar_montadoras():
     ignorar = ['.git', '.streamlit', '__pycache__', 'dados_eeprom', 'logos', 'logo', 'Logos', 'LOGO']
@@ -44,10 +45,10 @@ def listar_modelos(montadora):
         return sorted([d for d in os.listdir(path) if os.path.isdir(os.path.join(path, d))])
     return []
 
-def buscar_logo_montadora(montadora):
+def buscar_logo_montadora_automatica(montadora):
     """
-    Busca super tolerante: se o arquivo de imagem tiver o nome da montadora em qualquer 
-    parte do seu nome (ex: DAF, DAF logo, logo_daf), ele será carregado.
+    BUSCA AUTOMÁTICA EM TEMPO REAL:
+    Vasculha a pasta Logos e traz qualquer imagem que contenha o nome da montadora.
     """
     if os.path.exists(LOGOS_DIR):
         arquivos = os.listdir(LOGOS_DIR)
@@ -55,7 +56,7 @@ def buscar_logo_montadora(montadora):
         
         for arquivo in arquivos:
             arq_upper = arquivo.upper()
-            # Verifica se é uma imagem e se o nome da montadora está contido no arquivo
+            # Se o nome da montadora estiver na imagem, ele valida automaticamente
             if mont_alvo in arq_upper and arq_upper.endswith(('.PNG', '.JPG', '.JPEG', '.WEBP')):
                 return os.path.join(LOGOS_DIR, arquivo)
     return None
@@ -76,134 +77,149 @@ def salvar_novo_veiculo(montadora, modelo, inicio, intervalo, info_extra, imagen
         return True
     return False
 
+# --- ESTILIZAÇÃO CSS PARA ALINHAMENTO ---
+st.markdown("""
+    <style>
+    .block-container { padding-top: 2rem; }
+    .montadora-card { text-align: center; padding: 10px; border-radius: 10px; background-color: #f0f2f6; margin-bottom: 10px; }
+    </style>
+""", unsafe_allow_html=True)
+
 # --- BARRA LATERAL ---
 st.sidebar.title("🛡️ EEPROM System")
-
-if st.sidebar.button("🏠 Tela Inicial / Dashboard", use_container_width=True):
+if st.sidebar.button("🏠 Voltar para Tela Inicial", use_container_width=True):
     st.session_state.montadora_selecionada = ""
     st.rerun()
 
 st.sidebar.markdown("---")
-st.sidebar.header("🔍 Navegação por Baias")
-
 montadoras_existentes = listar_montadoras()
 
-escolha_sidebar = st.sidebar.selectbox(
-    "Selecionar Montadora", 
-    [""] + montadoras_existentes,
-    index=0 if st.session_state.montadora_selecionada == "" else (montadoras_existentes.index(st.session_state.montadora_selecionada) + 1)
-)
-
-if escolha_sidebar != st.session_state.montadora_selecionada:
-    st.session_state.montadora_selecionada = escolha_sidebar
-    st.rerun()
-
-modelos_existentes = listar_modelos(st.session_state.montadora_selecionada)
-escolha_modelo = st.sidebar.selectbox("Selecionar Modelo", [""] + modelos_existentes) if st.session_state.montadora_selecionada else None
-
-# --- CONTEÚDO PRINCIPAL ---
-
-# TELA INICIAL (DASHBOARD)
+# --- TELA INICIAL: DASHBOARD COM SELEÇÃO DIRETA ---
 if st.session_state.montadora_selecionada == "":
-    st.title("🚜 Bem-vindo ao Sistema de Baias EEPROM")
-    st.markdown("### Selecione uma montadora para visualizar os mapas")
+    st.title("🚜 Painel de Controle - Baias EEPROM")
+    st.markdown("### Escolha a Montadora desejada para abrir os modelos")
     st.write("")
 
     if not montadoras_existentes:
-        st.info("Nenhuma montadora cadastrada ainda. Use a área administrativa abaixo.")
+        st.info("Nenhuma montadora cadastrada nas pastas. Use a área administrativa abaixo.")
     else:
+        # Cria o grid alinhado de montadoras
         cols = st.columns(4)
         for i, m in enumerate(montadoras_existentes):
             with cols[i % 4]:
-                caminho_logo = buscar_logo_montadora(m)
+                caminho_logo = buscar_logo_montadora_automatica(m)
+                
+                # Renderiza a logo ou aviso centralizado e alinhado
                 if caminho_logo:
                     try:
                         img_home = Image.open(caminho_logo)
                         st.image(img_home, width=150)
                     except:
-                        st.markdown("### ⚠️ Erro")
+                        st.error("Erro ao ler arquivo")
                 else:
-                    st.markdown("### 🏭")
+                    # Se não achar, mostra o nome grande estilizado para não ficar desalinhado
+                    st.info(f"🏭 {m} (Sem imagem na pasta Logos)")
                 
+                # Botão de clique para abrir
                 if st.button(f"Abrir {m}", key=f"home_{m}", use_container_width=True):
                     st.session_state.montadora_selecionada = m
                     st.rerun()
-                st.markdown("<br>", unsafe_allow_html=True)
 
-# TELA DA MONTADORA / MODELO
+    # DIAGNÓSTICO DAS LOGOS (Aparece apenas na tela inicial para te ajudar a corrigir)
+    with st.sidebar.expander("🔍 Diagnóstico Técnico de Imagens"):
+        st.write(f"**Pasta Atual:** `{BASE_DIR}`")
+        st.write(f"**Procurando em:** `{LOGOS_DIR}`")
+        if os.path.exists(LOGOS_DIR):
+            arquivos_na_pasta = os.listdir(LOGOS_DIR)
+            st.write(f"**Arquivos detectados lá dentro:** {arquivos_na_pasta}")
+        else:
+            st.write("❌ Pasta de Logos não detectada!")
+
+# --- TELA INTERNA: JÁ EXIBE OS MODELOS DISPONÍVEIS IMEDIATAMENTE ---
 else:
-    col_logo, col_nome = st.columns([1, 4])
-    caminho_da_logo = buscar_logo_montadora(st.session_state.montadora_selecionada)
+    # Cabeçalho alinhado: Logo na esquerda, Nome na direita
+    col_logo, col_nome = st.columns([1, 5])
+    caminho_da_logo = buscar_logo_montadora_automatica(st.session_state.montadora_selecionada)
     
     with col_logo:
         if caminho_da_logo:
-            try:
-                st.image(Image.open(caminho_da_logo), width=120)
-            except:
-                st.subheader("⚠️")
+            st.image(Image.open(caminho_da_logo), width=100)
         else:
             st.subheader("🏭")
             
     with col_nome:
-        st.markdown(f"<h1 style='margin-top: 10px; color: #1E88E5;'>{st.session_state.montadora_selecionada}</h1>", unsafe_allow_html=True)
+        st.markdown(f"<h1 style='margin-top: 5px; color: #1E88E5;'>{st.session_state.montadora_selecionada}</h1>", unsafe_allow_html=True)
     
     st.markdown("---")
 
-    if escolha_modelo:
-        path_final = os.path.join(BASE_DIR, st.session_state.montadora_selecionada, escolha_modelo)
-        st.header(f"📍 Modelo: {escolha_modelo}")
-        
-        graficos_encontrados = []
-        for nome_img in ["grafico_1.png", "grafico_2.png", "grafico.png"]:
-            p = os.path.join(path_final, nome_img)
-            if os.path.exists(p): graficos_encontrados.append(p)
-
-        col_img, col_info = st.columns([2, 1])
-        
-        with col_img:
-            if not graficos_encontrados:
-                st.error("⚠️ Nenhuma imagem encontrada.")
-            elif len(graficos_encontrados) == 1:
-                st.image(graficos_encontrados[0], use_container_width=True)
-            else:
-                sub1, sub2 = st.columns(2)
-                sub1.image(graficos_encontrados[0], use_container_width=True)
-                sub2.image(graficos_encontrados[1], use_container_width=True)
-                
-        with col_info:
-            st.subheader("Informações do Mapa")
-            json_path = os.path.join(path_final, "dados.json")
-            if os.path.exists(json_path):
-                with open(json_path, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-                st.write("**Início:**"); st.code(data["posicao_inicio"], language="text")
-                st.write("**Intervalo:**"); st.code(data["intervalo"], language="text")
-                st.write("**Detalhes:**"); st.info(data["detalhes"])
+    # CARREGAMENTO DOS MODELOS DIRETO NA TELA
+    modelos_existentes = listar_modelos(st.session_state.montadora_selecionada)
+    
+    if not modelos_existentes:
+        st.warning(f"Nenhum veículo cadastrado para a montadora {st.session_state.montadora_selecionada}. Cadastre um modelo abaixo.")
     else:
-        st.info(f"Selecione um Modelo da **{st.session_state.montadora_selecionada}** na lateral.")
+        # Seletor de modelos centralizado e em destaque na tela principal
+        escolha_modelo = st.selectbox("📂 Escolha o Modelo/Veículo para ver o gráfico:", [""] + modelos_existentes)
+        
+        if escolha_modelo:
+            st.markdown(f"### 📍 Visualizando: {escolha_modelo}")
+            path_final = os.path.join(BASE_DIR, st.session_state.montadora_selecionada, escolha_modelo)
+            
+            graficos_encontrados = []
+            for nome_img in ["grafico_1.png", "grafico_2.png", "grafico.png"]:
+                p = os.path.join(path_final, nome_img)
+                if os.path.exists(p): graficos_encontrados.append(p)
+
+            # Divisão em duas colunas: Gráficos na Esquerda (Grande), Dados na Direita (Painel Fixo)
+            col_img, col_info = st.columns([2, 1])
+            
+            with col_img:
+                if not graficos_encontrados:
+                    st.error("⚠️ Nenhuma imagem de mapa encontrada nesta pasta.")
+                elif len(graficos_encontrados) == 1:
+                    st.image(graficos_encontrados[0], use_container_width=True)
+                else:
+                    sub1, sub2 = st.columns(2)
+                    sub1.image(graficos_encontrados[0], use_container_width=True, caption="Gráfico 1")
+                    sub2.image(graficos_encontrados[1], use_container_width=True, caption="Gráfico 2")
+                    
+            with col_info:
+                st.subheader("📋 Informações do Mapa")
+                json_path = os.path.join(path_final, "dados.json")
+                if os.path.exists(json_path):
+                    with open(json_path, "r", encoding="utf-8") as f:
+                        data = json.load(f)
+                    st.write("**Início do Gráfico:**")
+                    st.code(data["posicao_inicio"], language="text")
+                    st.write("**Intervalo de Endereços:**")
+                    st.code(data["intervalo"], language="text")
+                    st.write("**Detalhes do Veículo:**")
+                    st.info(data["detalhes"])
+                else:
+                    st.warning("Arquivo dados.json ausente.")
 
 # --- SEÇÃO ADMINISTRATIVA ---
 st.markdown("<br><br>", unsafe_allow_html=True)
-with st.expander("➕ ÁREA ADMINISTRATIVA"):
+with st.expander("➕ ÁREA ADMINISTRATIVA: Adicionar Montadoras e Veículos"):
     adm1, adm2 = st.columns(2)
     with adm1:
         st.subheader("Nova Montadora")
-        nova_m = st.text_input("Nome").upper().strip()
+        nova_m = st.text_input("Nome da Montadora").upper().strip()
         if st.button("Criar Pasta"):
             if nova_m:
                 os.makedirs(os.path.join(BASE_DIR, nova_m), exist_ok=True)
-                st.success("Criada!"); st.rerun()
+                st.success("Montadora Criada!"); st.rerun()
     with adm2:
         st.subheader("Novo Veículo")
         if montadoras_existentes:
-            m_adm = st.selectbox("Montadora", montadoras_existentes)
-            v_adm = st.text_input("Modelo")
+            m_adm = st.selectbox("Escolha a Montadora", montadoras_existentes)
+            v_adm = st.text_input("Nome do Modelo")
             c1, c2 = st.columns(2)
-            v_ini = c1.text_input("Início")
+            v_ini = c1.text_input("Endereço Inicial")
             v_int = c2.text_input("Intervalo")
-            v_det = st.text_area("Detalhes")
-            v_files = st.file_uploader("Fotos (Máx 2)", type=["png", "jpg", "jpeg"], accept_multiple_files=True)
-            if st.button("Salvar Veículo"):
+            v_det = st.text_area("Informações Adicionais")
+            v_files = st.file_uploader("Fotos dos Gráficos (Máx 2)", type=["png", "jpg", "jpeg"], accept_multiple_files=True)
+            if st.button("Salvar Tudo"):
                 if v_adm and v_files:
                     salvar_novo_veiculo(m_adm, v_adm, v_ini, v_int, v_det, v_files)
-                    st.success("Salvo!"); st.rerun()
+                    st.success("Veículo guardado na pasta com sucesso!"); st.rerun()
