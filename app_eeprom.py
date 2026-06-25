@@ -274,7 +274,7 @@ with st.expander("➕ ÁREA ADMINISTRATIVA: Adicionar Montadoras e Veículos"):
             v_int = c2.text_input("Intervalo")
             
             c_adm1, c_adm2 = st.columns(2)
-            v_inv_input = c_adm1.selectbox("Valores Invertidos?", ["Não", "Sim"])
+            v_inv_input = c_adm1.selectbox("Valores Invertidos?", ["Desativado", "Ativado"])
             v_escala_input = c_adm2.selectbox("Escala do Mapa", ["8 bits", "16 bits", "32 bits"])
             
             v_det = st.text_area("Informações Adicionais")
