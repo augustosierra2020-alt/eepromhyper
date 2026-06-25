@@ -1,4 +1,4 @@
-import streamlit st
+import streamlit as st  # CORRIGIDO: Adicionado o 'as' que faltava
 import os
 import json
 import base64
@@ -80,7 +80,6 @@ def salvar_novo_veiculo(montadora, modelo, inicio, intervalo, info_extra, valore
     with open(os.path.join(pasta_modelo, "dados.json"), "w", encoding="utf-8") as f:
         json.dump(dados, f, indent=4, ensure_ascii=False)
     
-    # ATUALIZADO: Agora limita e salva até 6 imagens consecutivas
     if imagens_upload:
         for idx, img_file in enumerate(imagens_upload[:6]):
             img = Image.open(img_file)
@@ -198,14 +197,12 @@ else:
             st.markdown(f"#### 📍 Mapa: {st.session_state.montadora_selecionada} {escolha_modelo}")
             path_final = os.path.join(BASE_DIR, st.session_state.montadora_selecionada, escolha_modelo)
             
-            # ATUALIZADO: Varredura de busca expandida de 1 até 6 imagens sequenciais
             graficos_encontrados = []
             for i in range(1, 7):
                 p = os.path.join(path_final, f"grafico_{i}.png")
                 if os.path.exists(p):
                     graficos_encontrados.append(p)
             
-            # Compatibilidade de backup para arquivos salvos como 'grafico.png' de versões legadas
             p_legado = os.path.join(path_final, "grafico.png")
             if os.path.exists(p_legado) and p_legado not in graficos_encontrados:
                 graficos_encontrados.append(p_legado)
@@ -216,7 +213,6 @@ else:
                 if not graficos_encontrados:
                     st.error("⚠️ Nenhuma imagem de mapa encontrada nesta pasta.")
                 else:
-                    # ATUALIZADO: Renderização em Grid dinâmico automático de 2 colunas por linha
                     for idx in range(0, len(graficos_encontrados), 2):
                         sub_cols = st.columns(2)
                         
@@ -292,7 +288,6 @@ with st.expander("➕ ÁREA ADMINISTRATIVA: Adicionar Montadoras e Veículos"):
             v_escala_input = c_adm2.selectbox("Escala do Mapa", ["8 bits", "16 bits", "32 bits"])
             
             v_det = st.text_area("Informações Adicionais")
-            # ATUALIZADO: Label alterado para refletir o novo limite máximo de 6 imagens de calibração
             v_files = st.file_uploader("Fotos dos Gráficos (Máx 6)", type=["png", "jpg", "jpeg"], accept_multiple_files=True)
             if st.button("Salvar Tudo"):
                 if v_adm and v_files:
