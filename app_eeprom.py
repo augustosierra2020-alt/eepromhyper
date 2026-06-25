@@ -1,6 +1,7 @@
 import streamlit as st
 import os
 import json
+import base64  # Nova biblioteca para compressão e renderização segura de imagens
 from PIL import Image
 
 # --- ANCORAGEM DEFINITIVA DA BIBLIOTECA 'Graficoseeprom' ---
@@ -23,7 +24,7 @@ st.set_page_config(page_title="EEPROM Master System", layout="wide")
 if 'montadora_selecionada' not in st.session_state:
     st.session_state.montadora_selecionada = ""
 
-# --- FUNÇÕES DE GERENCIAMENTO DA BIBLIOTECA ---
+# --- FUNÇÕES DE GERENCIAMENTO ---
 
 def listar_montadoras():
     ignorar = ['.git', '.streamlit', '__pycache__', 'dados_eeprom', 'logos', 'logo', 'Logos', 'LOGO']
@@ -47,18 +48,23 @@ def buscar_logo_montadora_automatica(montadora):
         arquivos = os.listdir(LOGOS_DIR)
         mont_alvo = montadora.strip().upper()
         
-        # Prioridade máxima para os novos arquivos PNG transparentes
-        for arquivo in arquivos:
+        for arquivo in archivos if 'archivos' in locals() else arquivos:
             arq_upper = arquivo.upper()
             if mont_alvo in arq_upper and arq_upper.endswith(('.PNG', '.WEBP')):
                 return os.path.join(LOGOS_DIR, arquivo)
-                
-        # Segunda opção se houver apenas JPG
         for arquivo in arquivos:
             arq_upper = arquivo.upper()
             if mont_alvo in arq_upper and arq_upper.endswith(('.JPG', '.JPEG')):
                 return os.path.join(LOGOS_DIR, arquivo)
     return None
+
+def obter_image_base64(caminho):
+    """Transforma a imagem física em código limpo para injeção direta de layout."""
+    try:
+        with open(caminho, "rb") as image_file:
+            return base64.b64encode(image_file.read()).decode()
+    except:
+        return ""
 
 def salvar_novo_veiculo(montadora, modelo, inicio, intervalo, info_extra, valores_invertidos, escala, imagens_upload):
     pasta_modelo = os.path.join(BASE_DIR, montadora.upper(), modelo.strip())
@@ -82,46 +88,24 @@ def salvar_novo_veiculo(montadora, modelo, inicio, intervalo, info_extra, valore
         return True
     return False
 
-# --- 🎨 REARQUITETURA VISUAL DO DASHBOARD (CSS CORRIGIDO) ---
+# --- 🎨 CONTROLE E ALINHAMENTO ESTRUTURAL DAS MOLDURAS (CSS) ---
 st.markdown("""
     <style>
     .block-container { padding-top: 2rem; }
     
-    /* MODIFICADO: Estreita a moldura para abraçar a logo sem sobrar espaço vazio nas laterais */
+    /* Configura o tamanho exato e uniforme de todas as molduras das montadoras */
     div[data-testid="stVerticalBlockBorderWrapper"] {
-        max-width: 190px !important;
+        max-width: 200px !important;
         margin: 0 auto !important;
-        padding: 14px !important;
+        padding: 12px !important;
         border-radius: 12px !important;
-        box-shadow: 0 4px 10px rgba(0,0,0,0.04) !important;
-        transition: transform 0.2s;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15) !important;
     }
     
-    div[data-testid="stVerticalBlockBorderWrapper"]:hover {
-        transform: translateY(-3px);
-    }
-    
-    /* MODIFICADO: Aumentado o contêiner interno da imagem */
-    div[data-testid="stImage"] {
-        display: flex !important;
-        justify-content: center !important;
-        align-items: center !important;
-        height: 130px !important; 
-        margin: 0 auto !important;
-    }
-    
-    /* MODIFICADO: Força a logo a se expandir horizontalmente e verticalmente de forma harmônica */
-    div[data-testid="stImage"] img {
-        max-height: 120px !important;
-        width: 85% !important; /* Faz a logo ocupar quase toda a largura interna, alinhando com o botão */
-        object-fit: contain !important;
-    }
-    
-    /* Botão compacto acompanhando a nova largura da moldura */
+    /* Ajuste para botões ocuparem as extremidades laterais certinhas */
     div.stButton > button {
-        margin-top: 5px !important;
+        margin-top: 4px !important;
         border-radius: 8px !important;
-        font-weight: 500 !important;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -153,13 +137,26 @@ if st.session_state.montadora_selecionada == "":
                     caminho_logo = buscar_logo_montadora_automatica(m)
                     
                     if caminho_logo:
-                        try:
-                            imagem_objeto = Image.open(caminho_logo)
-                            st.image(imagem_objeto, use_container_width=True)
-                        except:
-                            st.error("Erro ao carregar")
+                        logo_b64 = obter_image_base64(caminho_logo)
+                        if logo_b64:
+                            # Badge HTML: Garante centralização milimétrica e fundo branco anti-modo-escuro
+                            st.markdown(f"""
+                                <div style="display: flex; justify-content: center; align-items: center; 
+                                            background-color: #FFFFFF; padding: 10px; border-radius: 8px; 
+                                            height: 110px; width: 100%; box-sizing: border-box; margin-bottom: 6px;">
+                                    <img src="data:image/png;base64,{logo_b64}" 
+                                         style="max-height: 90px; max-width: 100%; object-fit: contain;">
+                                </div>
+                            """, unsafe_allow_html=True)
+                        else:
+                            st.error("Erro")
                     else:
-                        st.markdown(f"<p style='text-align:center; margin:40px 0; font-weight:bold; color:#1E88E5;'>🏭 {m}</p>", unsafe_allow_html=True)
+                        st.markdown(f"""
+                            <div style="display: flex; justify-content: center; align-items: center; 
+                                        height: 110px; width: 100%; margin-bottom: 6px;">
+                                <p style='text-align:center; font-weight:bold; color:#1E88E5; margin:0;'>🏭 {m}</p>
+                            </div>
+                        """, unsafe_allow_html=True)
                     
                     if st.button(f"Abrir {m}", key=f"home_{m}", use_container_width=True):
                         st.session_state.montadora_selecionada = m
@@ -167,21 +164,28 @@ if st.session_state.montadora_selecionada == "":
 
 # --- TELA INTERNA: EXIBE OS MODELOS DISPONÍVEIS IMEDIATAMENTE ---
 else:
-    # Cabeçalho interno compacto e alinhado
+    # Cabeçalho interno com o mesmo tratamento de contraste
     col_logo, col_nome = st.columns([1, 8])
     caminho_da_logo = buscar_logo_montadora_automatica(st.session_state.montadora_selecionada)
     
     with col_logo:
         if caminho_da_logo:
-            try:
-                st.image(Image.open(caminho_da_logo), width=75)
-            except:
+            logo_b64_int = obter_image_base64(caminho_da_logo)
+            if logo_b64_int:
+                st.markdown(f"""
+                    <div style="display: flex; justify-content: center; align-items: center; 
+                                background-color: #FFFFFF; padding: 6px; border-radius: 8px; 
+                                height: 75px; width: 75px; box-sizing: border-box;">
+                        <img src="data:image/png;base64,{logo_b64_int}" style="max-height: 60px; max-width: 100%; object-fit: contain;">
+                    </div>
+                """, unsafe_allow_html=True)
+            else:
                 st.subheader("🏭")
         else:
             st.subheader("🏭")
             
     with col_nome:
-        st.markdown(f"<h1 style='margin-top: 0px; color: #1E88E5;'>{st.session_state.montadora_selecionada}</h1>", unsafe_allow_html=True)
+        st.markdown(f"<h1 style='margin-top: 5px; color: #1E88E5;'>{st.session_state.montadora_selecionada}</h1>", unsafe_allow_html=True)
     
     st.markdown("---")
 
@@ -215,7 +219,7 @@ else:
                     sub1.image(graficos_encontrados[0], use_container_width=True, caption="Gráfico Principal (1)")
                     sub2.image(graficos_encontrados[1], use_container_width=True, caption="Gráfico Complementar (2)")
                 
-                # Configuração de mapa adicionada logo abaixo dos gráficos
+                # Ficha técnica de Configuração de mapa abaixo dos gráficos
                 st.write("")
                 with st.container(border=True):
                     st.markdown("⚙️ **Configuração de Mapa**")
