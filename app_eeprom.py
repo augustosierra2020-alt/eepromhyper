@@ -82,46 +82,46 @@ def salvar_novo_veiculo(montadora, modelo, inicio, intervalo, info_extra, valore
         return True
     return False
 
-# --- AJUSTE FINO DE DESIGN E SIMETRIA DOS CARDS (CSS) ---
+# --- 🎨 REARQUITETURA VISUAL DO DASHBOARD (CSS CORRIGIDO) ---
 st.markdown("""
     <style>
     .block-container { padding-top: 2rem; }
     
-    /* Força as molduras (containers) a ficarem em tamanho compacto, harmônico e centralizadas */
+    /* MODIFICADO: Estreita a moldura para abraçar a logo sem sobrar espaço vazio nas laterais */
     div[data-testid="stVerticalBlockBorderWrapper"] {
-        max-width: 220px !important;
+        max-width: 190px !important;
         margin: 0 auto !important;
-        padding: 16px !important;
+        padding: 14px !important;
         border-radius: 12px !important;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.05) !important;
+        box-shadow: 0 4px 10px rgba(0,0,0,0.04) !important;
         transition: transform 0.2s;
     }
     
-    /* Efeito sutil ao passar o mouse por cima do card */
     div[data-testid="stVerticalBlockBorderWrapper"]:hover {
-        transform: translateY(-2px);
+        transform: translateY(-3px);
     }
     
-    /* Area da imagem centralizada e com tamanho fixado proporcionalmente */
+    /* MODIFICADO: Aumentado o contêiner interno da imagem */
     div[data-testid="stImage"] {
         display: flex !important;
         justify-content: center !important;
         align-items: center !important;
-        height: 110px !important;
+        height: 130px !important; 
         margin: 0 auto !important;
     }
     
-    /* Ajusta a logo para preencher melhor a moldura menor sem distorcer */
+    /* MODIFICADO: Força a logo a se expandir horizontalmente e verticalmente de forma harmônica */
     div[data-testid="stImage"] img {
-        max-height: 100px !important;
-        width: auto !important;
+        max-height: 120px !important;
+        width: 85% !important; /* Faz a logo ocupar quase toda a largura interna, alinhando com o botão */
         object-fit: contain !important;
     }
     
-    /* Botão com cantos arredondados combinando com o card compacto */
+    /* Botão compacto acompanhando a nova largura da moldura */
     div.stButton > button {
-        margin-top: 10px !important;
+        margin-top: 5px !important;
         border-radius: 8px !important;
+        font-weight: 500 !important;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -139,7 +139,7 @@ montadoras_existentes = listar_montadoras()
 
 # --- TELA INICIAL: DASHBOARD COM GRID ALINHADO ---
 if st.session_state.montadora_selecionada == "":
-    st.title("🚜 Painel de Controle - Baias EEPROM")
+    st.title("🚜 Painel de Controle - Mapas de EEPROM")
     st.markdown("### Escolha a Montadora desejada para abrir os modelos")
     st.write("")
 
@@ -215,7 +215,7 @@ else:
                     sub1.image(graficos_encontrados[0], use_container_width=True, caption="Gráfico Principal (1)")
                     sub2.image(graficos_encontrados[1], use_container_width=True, caption="Gráfico Complementar (2)")
                 
-                # Ficha técnica estrutural de Configuração de mapa adicionada logo abaixo dos gráficos
+                # Configuração de mapa adicionada logo abaixo dos gráficos
                 st.write("")
                 with st.container(border=True):
                     st.markdown("⚙️ **Configuração de Mapa**")
