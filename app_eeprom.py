@@ -3,7 +3,8 @@ import os
 import json
 from PIL import Image
 
-# --- FORÇAR DIRETÓRIO RAIZ CORRETO ---
+# --- ANCORAGEM DEFINITIVA DA BIBLIOTECA 'Graficoseeprom' ---
+# Garante que o ponto central do sistema seja sempre a pasta onde o app.py está executando
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 def mapear_pasta_logos(base):
@@ -23,7 +24,7 @@ st.set_page_config(page_title="EEPROM Master System", layout="wide")
 if 'montadora_selecionada' not in st.session_state:
     st.session_state.montadora_selecionada = ""
 
-# --- FUNÇÕES ---
+# --- FUNÇÕES DE GERENCIAMENTO DA BIBLIOTECA ---
 
 def listar_montadoras():
     ignorar = ['.git', '.streamlit', '__pycache__', 'dados_eeprom', 'logos', 'logo', 'Logos', 'LOGO']
@@ -47,18 +48,32 @@ def buscar_logo_montadora_automatica(montadora):
         arquivos = os.listdir(LOGOS_DIR)
         mont_alvo = montadora.strip().upper()
         
+        # Prioridade máxima para os novos arquivos PNG transparentes pretos
         for arquivo in arquivos:
             arq_upper = arquivo.upper()
-            if mont_alvo in arq_upper and arq_upper.endswith(('.PNG', '.JPG', '.JPEG', '.WEBP')):
+            if mont_alvo in arq_upper and arq_upper.endswith(('.PNG', '.WEBP')):
+                return os.path.join(LOGOS_DIR, arquivo)
+                
+        # Segunda opção caso só exista o JPG antigo
+        for arquivo in arquivos:
+            arq_upper = arquivo.upper()
+            if mont_alvo in arq_upper and arq_upper.endswith(('.JPG', '.JPEG')):
                 return os.path.join(LOGOS_DIR, arquivo)
     return None
 
-def salvar_novo_veiculo(montadora, modelo, inicio, intervalo, info_extra, imagens_upload):
+def salvar_novo_veiculo(montadora, modelo, inicio, intervalo, info_extra, valores_invertidos, escala, imagens_upload):
+    # Força a criação da pasta do veículo estritamente dentro de Graficoseeprom / MONTADORA / MODELO
     pasta_modelo = os.path.join(BASE_DIR, montadora.upper(), modelo.strip())
     if not os.path.exists(pasta_modelo):
         os.makedirs(pasta_modelo)
     
-    dados = {"posicao_inicio": inicio, "intervalo": intervalo, "detalhes": info_extra}
+    dados = {
+        "posicao_inicio": inicio, 
+        "intervalo": intervalo, 
+        "detalhes": info_extra,
+        "valores_invertidos": valores_invertidos,
+        "escala": escala
+    }
     with open(os.path.join(pasta_modelo, "dados.json"), "w", encoding="utf-8") as f:
         json.dump(dados, f, indent=4, ensure_ascii=False)
     
@@ -71,6 +86,10 @@ def salvar_novo_veiculo(montadora, modelo, inicio, intervalo, info_extra, imagen
 
 # --- BARRA LATERAL ---
 st.sidebar.title("🛡️ EEPROM System")
+
+# Indicador visual para você ter certeza de onde os dados estão salvando fisicamente
+st.sidebar.info(f"📂 **Biblioteca Ativa:**\n`Graficoseeprom`")
+
 if st.sidebar.button("🏠 Voltar para Tela Inicial", use_container_width=True):
     st.session_state.montadora_selecionada = ""
     st.rerun()
@@ -85,18 +104,16 @@ if st.session_state.montadora_selecionada == "":
     st.write("")
 
     if not montadoras_existentes:
-        st.info("Nenhuma montadora cadastrada nas pastas. Use a área administrativa abaixo.")
+        st.info("Nenhuma montadora cadastrada nas pastas. Use a área administrativa abaixo para iniciar sua biblioteca.")
     else:
         cols = st.columns(4)
         for i, m in enumerate(montadoras_existentes):
             with cols[i % 4]:
-                # O uso do border=True cria o "card/baia" perfeito de forma nativa e alinhada
                 with st.container(border=True):
                     caminho_logo = buscar_logo_montadora_automatica(m)
                     
                     if caminho_logo:
                         try:
-                            # Força a abertura direta do arquivo para evitar bugs de caminhos com espaços no Windows
                             imagem_objeto = Image.open(caminho_logo)
                             st.image(imagem_objeto, width=140)
                         except:
@@ -104,20 +121,16 @@ if st.session_state.montadora_selecionada == "":
                     else:
                         st.markdown(f"<p style='text-align:center; margin:20px 0; font-weight:bold;'>🏭 {m}</p>", unsafe_allow_html=True)
                     
-                    # CORRIGIDO: Agora o botão exibe dinamicamente o nome da montadora correto!
                     if st.button(f"Abrir {m}", key=f"home_{m}", use_container_width=True):
                         st.session_state.montadora_selecionada = m
                         st.rerun()
 
     # DIAGNÓSTICO DAS LOGOS
-    with st.sidebar.expander("🔍 Diagnóstico Técnico de Imagens"):
-        st.write(f"**Pasta Atual:** `{BASE_DIR}`")
-        st.write(f"**Procurando em:** `{LOGOS_DIR}`")
+    with st.sidebar.expander("🔍 Ver Arquivos da Pasta Logos"):
         if os.path.exists(LOGOS_DIR):
-            arquivos_na_pasta = os.listdir(LOGOS_DIR)
-            st.write(f"**Arquivos detectados lá dentro:** {arquivos_na_pasta}")
+            st.write(os.listdir(LOGOS_DIR))
         else:
-            st.write("❌ Pasta de Logos não detectada!")
+            st.write("Pasta vazia")
 
 # --- TELA INTERNA: EXIBE OS MODELOS DISPONÍVEIS IMEDIATAMENTE ---
 else:
@@ -148,7 +161,7 @@ else:
         st.write("")
         
         if escolha_modelo:
-            st.markdown(f"#### 📍 Mapa: {st.session_state.montadora_selecionada} {choice_modelo}" if 'choice_modelo' in locals() else f"#### 📍 Mapa: {st.session_state.montadora_selecionada} {escolha_modelo}")
+            st.markdown(f"#### 📍 Mapa: {st.session_state.montadora_selecionada} {escolha_modelo}")
             path_final = os.path.join(BASE_DIR, st.session_state.montadora_selecionada, escolha_modelo)
             
             graficos_encontrados = []
@@ -167,10 +180,28 @@ else:
                     sub1, sub2 = st.columns(2)
                     sub1.image(graficos_encontrados[0], use_container_width=True, caption="Gráfico Principal (1)")
                     sub2.image(graficos_encontrados[1], use_container_width=True, caption="Gráfico Complementar (2)")
+                
+                # Configuração de mapa adicionada logo abaixo dos gráficos
+                st.write("")
+                with st.container(border=True):
+                    st.markdown("⚙️ **Configuração de Mapa**")
+                    json_path = os.path.join(path_final, "dados.json")
+                    if os.path.exists(json_path):
+                        with open(json_path, "r", encoding="utf-8") as f:
+                            cfg_data = json.load(f)
+                        
+                        v_inv_salvo = cfg_data.get("valores_invertidos", "Não informado")
+                        escala_salva = cfg_data.get("escala", "Não informado")
+                        
+                        cm1, cm2 = st.columns(2)
+                        cm1.write(f"**Valores invertidos:** {v_inv_salvo}")
+                        cm2.write(f"**Escala:** {escala_salva}")
+                    else:
+                        st.caption("Configurações técnicas estruturais não localizadas.")
                     
             with col_info:
                 with st.container(border=True):
-                    st.subheader("📋 Informações do Mapa")
+                    st.subheader("📋 Informações Gerais")
                     json_path = os.path.join(path_final, "dados.json")
                     if os.path.exists(json_path):
                         with open(json_path, "r", encoding="utf-8") as f:
@@ -193,8 +224,9 @@ with st.expander("➕ ÁREA ADMINISTRATIVA: Adicionar Montadoras e Veículos"):
         nova_m = st.text_input("Nome da Montadora").upper().strip()
         if st.button("Criar Pasta"):
             if nova_m:
+                # Força a criação da pasta da montadora rigorosamente dentro de Graficoseeprom
                 os.makedirs(os.path.join(BASE_DIR, nova_m), exist_ok=True)
-                st.success("Montadora Criada!"); st.rerun()
+                st.success(f"Pasta '{nova_m}' criada com sucesso na biblioteca!"); st.rerun()
     with adm2:
         st.subheader("Novo Veículo")
         if montadoras_existentes:
@@ -203,9 +235,14 @@ with st.expander("➕ ÁREA ADMINISTRATIVA: Adicionar Montadoras e Veículos"):
             c1, c2 = st.columns(2)
             v_ini = c1.text_input("Endereço Inicial")
             v_int = c2.text_input("Intervalo")
+            
+            c_adm1, c_adm2 = st.columns(2)
+            v_inv_input = c_adm1.selectbox("Valores Invertidos?", ["Não", "Sim"])
+            v_escala_input = c_adm2.selectbox("Escala do Mapa", ["8 bits", "16 bits", "32 bits"])
+            
             v_det = st.text_area("Informações Adicionais")
             v_files = st.file_uploader("Fotos dos Gráficos (Máx 2)", type=["png", "jpg", "jpeg"], accept_multiple_files=True)
             if st.button("Salvar Tudo"):
                 if v_adm and v_files:
-                    salvar_novo_veiculo(m_adm, v_adm, v_ini, v_int, v_det, v_files)
+                    salvar_novo_veiculo(m_adm, v_adm, v_ini, v_int, v_det, v_inv_input, v_escala_input, v_files)
                     st.success("Veículo guardado na pasta com sucesso!"); st.rerun()
