@@ -4,7 +4,6 @@ import json
 from PIL import Image
 
 # --- ANCORAGEM DEFINITIVA DA BIBLIOTECA 'Graficoseeprom' ---
-# Garante que o ponto central do sistema seja sempre a pasta onde o app.py está executando
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 def mapear_pasta_logos(base):
@@ -62,7 +61,6 @@ def buscar_logo_montadora_automatica(montadora):
     return None
 
 def salvar_novo_veiculo(montadora, modelo, inicio, intervalo, info_extra, valores_invertidos, escala, imagens_upload):
-    # Força a criação da pasta do veículo estritamente dentro de Graficoseeprom / MONTADORA / MODELO
     pasta_modelo = os.path.join(BASE_DIR, montadora.upper(), modelo.strip())
     if not os.path.exists(pasta_modelo):
         os.makedirs(pasta_modelo)
@@ -84,10 +82,36 @@ def salvar_novo_veiculo(montadora, modelo, inicio, intervalo, info_extra, valore
         return True
     return False
 
+# --- AJUSTE FINO DE DESIGN E ARQUITETURA VISUAL (CSS) ---
+st.markdown("""
+    <style>
+    .block-container { padding-top: 2rem; }
+    
+    /* Centraliza a imagem horizontalmente dentro do card/baia */
+    div[data-testid="stImage"] {
+        display: flex !important;
+        justify-content: center !important;
+        align-items: center !important;
+        margin-bottom: 15px !important;
+        height: 100px !important; /* Espaço fixo vertical para alinhar todos os cards */
+    }
+    
+    /* Mantém a proporção original de 720x720, mas limita a altura de forma harmônica */
+    div[data-testid="stImage"] img {
+        max-height: 85px !important;
+        width: auto !important;
+        object-fit: contain !important;
+    }
+    
+    /* Margem de alinhamento para os botões dos cards */
+    div.stButton > button {
+        margin-top: 5px;
+    }
+    </style>
+""", unsafe_allow_html=True)
+
 # --- BARRA LATERAL ---
 st.sidebar.title("🛡️ EEPROM System")
-
-# Indicador visual para você ter certeza de onde os dados estão salvando fisicamente
 st.sidebar.info(f"📂 **Biblioteca Ativa:**\n`Graficoseeprom`")
 
 if st.sidebar.button("🏠 Voltar para Tela Inicial", use_container_width=True):
@@ -115,11 +139,11 @@ if st.session_state.montadora_selecionada == "":
                     if caminho_logo:
                         try:
                             imagem_objeto = Image.open(caminho_logo)
-                            st.image(imagem_objeto, width=140)
+                            st.image(imagem_objeto, use_container_width=True)
                         except:
                             st.error("Erro ao carregar")
                     else:
-                        st.markdown(f"<p style='text-align:center; margin:20px 0; font-weight:bold;'>🏭 {m}</p>", unsafe_allow_html=True)
+                        st.markdown(f"<p style='text-align:center; margin:35px 0; font-weight:bold; color:#1E88E5;'>🏭 {m}</p>", unsafe_allow_html=True)
                     
                     if st.button(f"Abrir {m}", key=f"home_{m}", use_container_width=True):
                         st.session_state.montadora_selecionada = m
@@ -134,20 +158,21 @@ if st.session_state.montadora_selecionada == "":
 
 # --- TELA INTERNA: EXIBE OS MODELOS DISPONÍVEIS IMEDIATAMENTE ---
 else:
-    col_logo, col_nome = st.columns([1, 5])
+    # Cabeçalho interno alinhado de forma elegante
+    col_logo, col_nome = st.columns([1, 6])
     caminho_da_logo = buscar_logo_montadora_automatica(st.session_state.montadora_selecionada)
     
     with col_logo:
         if caminho_da_logo:
             try:
-                st.image(Image.open(caminho_da_logo), width=90)
+                st.image(Image.open(caminho_da_logo), width=80)
             except:
                 st.subheader("🏭")
         else:
             st.subheader("🏭")
             
     with col_nome:
-        st.markdown(f"<h1 style='margin-top: 5px; color: #1E88E5;'>{st.session_state.montadora_selecionada}</h1>", unsafe_allow_html=True)
+        st.markdown(f"<h1 style='margin-top: 0px; color: #1E88E5;'>{st.session_state.montadora_selecionada}</h1>", unsafe_allow_html=True)
     
     st.markdown("---")
 
@@ -224,7 +249,6 @@ with st.expander("➕ ÁREA ADMINISTRATIVA: Adicionar Montadoras e Veículos"):
         nova_m = st.text_input("Nome da Montadora").upper().strip()
         if st.button("Criar Pasta"):
             if nova_m:
-                # Força a criação da pasta da montadora rigorosamente dentro de Graficoseeprom
                 os.makedirs(os.path.join(BASE_DIR, nova_m), exist_ok=True)
                 st.success(f"Pasta '{nova_m}' criada com sucesso na biblioteca!"); st.rerun()
     with adm2:
