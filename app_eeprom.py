@@ -1,7 +1,7 @@
 import streamlit as st
 import os
 import json
-import base64  # Nova biblioteca para compressão e renderização segura de imagens
+import base64
 from PIL import Image
 
 # --- ANCORAGEM DEFINITIVA DA BIBLIOTECA 'Graficoseeprom' ---
@@ -48,7 +48,7 @@ def buscar_logo_montadora_automatica(montadora):
         arquivos = os.listdir(LOGOS_DIR)
         mont_alvo = montadora.strip().upper()
         
-        for arquivo in archivos if 'archivos' in locals() else arquivos:
+        for arquivo in arquivos:
             arq_upper = arquivo.upper()
             if mont_alvo in arq_upper and arq_upper.endswith(('.PNG', '.WEBP')):
                 return os.path.join(LOGOS_DIR, arquivo)
@@ -59,7 +59,6 @@ def buscar_logo_montadora_automatica(montadora):
     return None
 
 def obter_image_base64(caminho):
-    """Transforma a imagem física em código limpo para injeção direta de layout."""
     try:
         with open(caminho, "rb") as image_file:
             return base64.b64encode(image_file.read()).decode()
@@ -93,7 +92,6 @@ st.markdown("""
     <style>
     .block-container { padding-top: 2rem; }
     
-    /* Configura o tamanho exato e uniforme de todas as molduras das montadoras */
     div[data-testid="stVerticalBlockBorderWrapper"] {
         max-width: 200px !important;
         margin: 0 auto !important;
@@ -102,7 +100,6 @@ st.markdown("""
         box-shadow: 0 4px 12px rgba(0,0,0,0.15) !important;
     }
     
-    /* Ajuste para botões ocuparem as extremidades laterais certinhas */
     div.stButton > button {
         margin-top: 4px !important;
         border-radius: 8px !important;
@@ -123,7 +120,7 @@ montadoras_existentes = listar_montadoras()
 
 # --- TELA INICIAL: DASHBOARD COM GRID ALINHADO ---
 if st.session_state.montadora_selecionada == "":
-    st.title("🚜 Painel de Controle - Mapas de EEPROM")
+    st.title("🚜 Painel de Controle - Baias EEPROM")
     st.markdown("### Escolha a Montadora desejada para abrir os modelos")
     st.write("")
 
@@ -139,7 +136,6 @@ if st.session_state.montadora_selecionada == "":
                     if caminho_logo:
                         logo_b64 = obter_image_base64(caminho_logo)
                         if logo_b64:
-                            # Badge HTML: Garante centralização milimétrica e fundo branco anti-modo-escuro
                             st.markdown(f"""
                                 <div style="display: flex; justify-content: center; align-items: center; 
                                             background-color: #FFFFFF; padding: 10px; border-radius: 8px; 
@@ -164,7 +160,6 @@ if st.session_state.montadora_selecionada == "":
 
 # --- TELA INTERNA: EXIBE OS MODELOS DISPONÍVEIS IMEDIATAMENTE ---
 else:
-    # Cabeçalho interno com o mesmo tratamento de contraste
     col_logo, col_nome = st.columns([1, 8])
     caminho_da_logo = buscar_logo_montadora_automatica(st.session_state.montadora_selecionada)
     
@@ -229,6 +224,10 @@ else:
                             cfg_data = json.load(f)
                         
                         v_inv_salvo = cfg_data.get("valores_invertidos", "Não informado")
+                        # Regra automática de compatibilidade para arquivos antigos
+                        if v_inv_salvo == "Não": v_inv_salvo = "Desativado"
+                        elif v_inv_salvo == "Sim": v_inv_salvo = "Ativado"
+                        
                         escala_salva = cfg_data.get("escala", "Não informado")
                         
                         cm1, cm2 = st.columns(2)
@@ -274,6 +273,7 @@ with st.expander("➕ ÁREA ADMINISTRATIVA: Adicionar Montadoras e Veículos"):
             v_int = c2.text_input("Intervalo")
             
             c_adm1, c_adm2 = st.columns(2)
+            # ATUALIZADO: Substituído "Não/Sim" por "Desativado/Ativado" no seletor administrativo
             v_inv_input = c_adm1.selectbox("Valores Invertidos?", ["Desativado", "Ativado"])
             v_escala_input = c_adm2.selectbox("Escala do Mapa", ["8 bits", "16 bits", "32 bits"])
             
