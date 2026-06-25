@@ -1,3 +1,4 @@
 rembg
 streamlit
 Pillow
+python-docx
