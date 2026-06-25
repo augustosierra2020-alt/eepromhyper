@@ -1,6 +1,7 @@
 import streamlit as st
 import os
 import json
+from PIL import Image
 
 # --- FORÇAR DIRETÓRIO RAIZ CORRETO ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -62,7 +63,6 @@ def salvar_novo_veiculo(montadora, modelo, inicio, intervalo, info_extra, imagen
         json.dump(dados, f, indent=4, ensure_ascii=False)
     
     if imagens_upload:
-        from PIL import Image
         for idx, img_file in enumerate(imagens_upload[:2]):
             img = Image.open(img_file)
             img.save(os.path.join(pasta_modelo, f"grafico_{idx+1}.png"))
@@ -90,16 +90,22 @@ if st.session_state.montadora_selecionada == "":
         cols = st.columns(4)
         for i, m in enumerate(montadoras_existentes):
             with cols[i % 4]:
+                # O uso do border=True cria o "card/baia" perfeito de forma nativa e alinhada
                 with st.container(border=True):
                     caminho_logo = buscar_logo_montadora_automatica(m)
                     
                     if caminho_logo:
-                        # Mudança crítica: passamos o caminho do arquivo direto, sem abrir com PIL
-                        st.image(caminho_logo, width=120)
+                        try:
+                            # Força a abertura direta do arquivo para evitar bugs de caminhos com espaços no Windows
+                            imagem_objeto = Image.open(caminho_logo)
+                            st.image(imagem_objeto, width=140)
+                        except:
+                            st.error("Erro ao carregar")
                     else:
                         st.markdown(f"<p style='text-align:center; margin:20px 0; font-weight:bold;'>🏭 {m}</p>", unsafe_allow_html=True)
                     
-                    if st.button("Abrir Baia", key=f"home_{m}", use_container_width=True):
+                    # CORRIGIDO: Agora o botão exibe dinamicamente o nome da montadora correto!
+                    if st.button(f"Abrir {m}", key=f"home_{m}", use_container_width=True):
                         st.session_state.montadora_selecionada = m
                         st.rerun()
 
@@ -120,8 +126,10 @@ else:
     
     with col_logo:
         if caminho_da_logo:
-            # Mudança crítica: carregamento direto nativo do Streamlit
-            st.image(caminho_da_logo, width=90)
+            try:
+                st.image(Image.open(caminho_da_logo), width=90)
+            except:
+                st.subheader("🏭")
         else:
             st.subheader("🏭")
             
@@ -140,7 +148,7 @@ else:
         st.write("")
         
         if escolha_modelo:
-            st.markdown(f"#### 📍 Mapa: {st.session_state.montadora_selecionada} {escolha_modelo}")
+            st.markdown(f"#### 📍 Mapa: {st.session_state.montadora_selecionada} {choice_modelo}" if 'choice_modelo' in locals() else f"#### 📍 Mapa: {st.session_state.montadora_selecionada} {escolha_modelo}")
             path_final = os.path.join(BASE_DIR, st.session_state.montadora_selecionada, escolha_modelo)
             
             graficos_encontrados = []
