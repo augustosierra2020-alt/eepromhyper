@@ -1,4 +1,4 @@
-import streamlit as st
+import streamlit st
 import os
 import json
 import base64
@@ -80,8 +80,9 @@ def salvar_novo_veiculo(montadora, modelo, inicio, intervalo, info_extra, valore
     with open(os.path.join(pasta_modelo, "dados.json"), "w", encoding="utf-8") as f:
         json.dump(dados, f, indent=4, ensure_ascii=False)
     
+    # ATUALIZADO: Agora limita e salva até 6 imagens consecutivas
     if imagens_upload:
-        for idx, img_file in enumerate(imagens_upload[:2]):
+        for idx, img_file in enumerate(imagens_upload[:6]):
             img = Image.open(img_file)
             img.save(os.path.join(pasta_modelo, f"grafico_{idx+1}.png"))
         return True
@@ -197,22 +198,37 @@ else:
             st.markdown(f"#### 📍 Mapa: {st.session_state.montadora_selecionada} {escolha_modelo}")
             path_final = os.path.join(BASE_DIR, st.session_state.montadora_selecionada, escolha_modelo)
             
+            # ATUALIZADO: Varredura de busca expandida de 1 até 6 imagens sequenciais
             graficos_encontrados = []
-            for nome_img in ["grafico_1.png", "grafico_2.png", "grafico.png"]:
-                p = os.path.join(path_final, nome_img)
-                if os.path.exists(p): graficos_encontrados.append(p)
+            for i in range(1, 7):
+                p = os.path.join(path_final, f"grafico_{i}.png")
+                if os.path.exists(p):
+                    graficos_encontrados.append(p)
+            
+            # Compatibilidade de backup para arquivos salvos como 'grafico.png' de versões legadas
+            p_legado = os.path.join(path_final, "grafico.png")
+            if os.path.exists(p_legado) and p_legado not in graficos_encontrados:
+                graficos_encontrados.append(p_legado)
 
             col_img, col_info = st.columns([2, 1])
             
             with col_img:
                 if not graficos_encontrados:
                     st.error("⚠️ Nenhuma imagem de mapa encontrada nesta pasta.")
-                elif len(graficos_encontrados) == 1:
-                    st.image(graficos_encontrados[0], use_container_width=True)
                 else:
-                    sub1, sub2 = st.columns(2)
-                    sub1.image(graficos_encontrados[0], use_container_width=True, caption="Gráfico Principal (1)")
-                    sub2.image(graficos_encontrados[1], use_container_width=True, caption="Gráfico Complementar (2)")
+                    # ATUALIZADO: Renderização em Grid dinâmico automático de 2 colunas por linha
+                    for idx in range(0, len(graficos_encontrados), 2):
+                        sub_cols = st.columns(2)
+                        
+                        with sub_cols[0]:
+                            if idx < len(graficos_encontrados):
+                                nome_arq = os.path.basename(graficos_encontrados[idx])
+                                cap = "Gráfico de Referência" if nome_arq == "grafico.png" else f"Gráfico Principal ({idx+1})"
+                                st.image(graficos_encontrados[idx], use_container_width=True, caption=cap)
+                                
+                        with sub_cols[1]:
+                            if idx + 1 < len(graficos_encontrados):
+                                st.image(graficos_encontrados[idx+1], use_container_width=True, caption=f"Gráfico Complementar ({idx+2})")
                 
                 # Ficha técnica de Configuração de mapa abaixo dos gráficos
                 st.write("")
@@ -224,7 +240,6 @@ else:
                             cfg_data = json.load(f)
                         
                         v_inv_salvo = cfg_data.get("valores_invertidos", "Não informado")
-                        # Regra automática de compatibilidade para arquivos antigos
                         if v_inv_salvo == "Não": v_inv_salvo = "Desativado"
                         elif v_inv_salvo == "Sim": v_inv_salvo = "Ativado"
                         
@@ -273,12 +288,12 @@ with st.expander("➕ ÁREA ADMINISTRATIVA: Adicionar Montadoras e Veículos"):
             v_int = c2.text_input("Intervalo")
             
             c_adm1, c_adm2 = st.columns(2)
-            # ATUALIZADO: Substituído "Não/Sim" por "Desativado/Ativado" no seletor administrativo
             v_inv_input = c_adm1.selectbox("Valores Invertidos?", ["Desativado", "Ativado"])
             v_escala_input = c_adm2.selectbox("Escala do Mapa", ["8 bits", "16 bits", "32 bits"])
             
             v_det = st.text_area("Informações Adicionais")
-            v_files = st.file_uploader("Fotos dos Gráficos (Máx 2)", type=["png", "jpg", "jpeg"], accept_multiple_files=True)
+            # ATUALIZADO: Label alterado para refletir o novo limite máximo de 6 imagens de calibração
+            v_files = st.file_uploader("Fotos dos Gráficos (Máx 6)", type=["png", "jpg", "jpeg"], accept_multiple_files=True)
             if st.button("Salvar Tudo"):
                 if v_adm and v_files:
                     salvar_novo_veiculo(m_adm, v_adm, v_ini, v_int, v_det, v_inv_input, v_escala_input, v_files)
