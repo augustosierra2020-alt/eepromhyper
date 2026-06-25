@@ -47,13 +47,13 @@ def buscar_logo_montadora_automatica(montadora):
         arquivos = os.listdir(LOGOS_DIR)
         mont_alvo = montadora.strip().upper()
         
-        # Prioridade máxima para os novos arquivos PNG transparentes pretos
+        # Prioridade máxima para os novos arquivos PNG transparentes
         for arquivo in arquivos:
             arq_upper = arquivo.upper()
             if mont_alvo in arq_upper and arq_upper.endswith(('.PNG', '.WEBP')):
                 return os.path.join(LOGOS_DIR, arquivo)
                 
-        # Segunda opção caso só exista o JPG antigo
+        # Segunda opção se houver apenas JPG
         for arquivo in arquivos:
             arq_upper = arquivo.upper()
             if mont_alvo in arq_upper and arq_upper.endswith(('.JPG', '.JPEG')):
@@ -82,30 +82,46 @@ def salvar_novo_veiculo(montadora, modelo, inicio, intervalo, info_extra, valore
         return True
     return False
 
-# --- AJUSTE FINO DE DESIGN E ARQUITETURA VISUAL (CSS) ---
+# --- AJUSTE FINO DE DESIGN E SIMETRIA DOS CARDS (CSS) ---
 st.markdown("""
     <style>
     .block-container { padding-top: 2rem; }
     
-    /* Centraliza a imagem horizontalmente dentro do card/baia */
+    /* Força as molduras (containers) a ficarem em tamanho compacto, harmônico e centralizadas */
+    div[data-testid="stVerticalBlockBorderWrapper"] {
+        max-width: 220px !important;
+        margin: 0 auto !important;
+        padding: 16px !important;
+        border-radius: 12px !important;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.05) !important;
+        transition: transform 0.2s;
+    }
+    
+    /* Efeito sutil ao passar o mouse por cima do card */
+    div[data-testid="stVerticalBlockBorderWrapper"]:hover {
+        transform: translateY(-2px);
+    }
+    
+    /* Area da imagem centralizada e com tamanho fixado proporcionalmente */
     div[data-testid="stImage"] {
         display: flex !important;
         justify-content: center !important;
         align-items: center !important;
-        margin-bottom: 15px !important;
-        height: 100px !important; /* Espaço fixo vertical para alinhar todos os cards */
+        height: 110px !important;
+        margin: 0 auto !important;
     }
     
-    /* Mantém a proporção original de 720x720, mas limita a altura de forma harmônica */
+    /* Ajusta a logo para preencher melhor a moldura menor sem distorcer */
     div[data-testid="stImage"] img {
-        max-height: 85px !important;
+        max-height: 100px !important;
         width: auto !important;
         object-fit: contain !important;
     }
     
-    /* Margem de alinhamento para os botões dos cards */
+    /* Botão com cantos arredondados combinando com o card compacto */
     div.stButton > button {
-        margin-top: 5px;
+        margin-top: 10px !important;
+        border-radius: 8px !important;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -143,29 +159,22 @@ if st.session_state.montadora_selecionada == "":
                         except:
                             st.error("Erro ao carregar")
                     else:
-                        st.markdown(f"<p style='text-align:center; margin:35px 0; font-weight:bold; color:#1E88E5;'>🏭 {m}</p>", unsafe_allow_html=True)
+                        st.markdown(f"<p style='text-align:center; margin:40px 0; font-weight:bold; color:#1E88E5;'>🏭 {m}</p>", unsafe_allow_html=True)
                     
                     if st.button(f"Abrir {m}", key=f"home_{m}", use_container_width=True):
                         st.session_state.montadora_selecionada = m
                         st.rerun()
 
-    # DIAGNÓSTICO DAS LOGOS
-    with st.sidebar.expander("🔍 Ver Arquivos da Pasta Logos"):
-        if os.path.exists(LOGOS_DIR):
-            st.write(os.listdir(LOGOS_DIR))
-        else:
-            st.write("Pasta vazia")
-
 # --- TELA INTERNA: EXIBE OS MODELOS DISPONÍVEIS IMEDIATAMENTE ---
 else:
-    # Cabeçalho interno alinhado de forma elegante
-    col_logo, col_nome = st.columns([1, 6])
+    # Cabeçalho interno compacto e alinhado
+    col_logo, col_nome = st.columns([1, 8])
     caminho_da_logo = buscar_logo_montadora_automatica(st.session_state.montadora_selecionada)
     
     with col_logo:
         if caminho_da_logo:
             try:
-                st.image(Image.open(caminho_da_logo), width=80)
+                st.image(Image.open(caminho_da_logo), width=75)
             except:
                 st.subheader("🏭")
         else:
@@ -206,7 +215,7 @@ else:
                     sub1.image(graficos_encontrados[0], use_container_width=True, caption="Gráfico Principal (1)")
                     sub2.image(graficos_encontrados[1], use_container_width=True, caption="Gráfico Complementar (2)")
                 
-                # Configuração de mapa adicionada logo abaixo dos gráficos
+                # Ficha técnica estrutural de Configuração de mapa adicionada logo abaixo dos gráficos
                 st.write("")
                 with st.container(border=True):
                     st.markdown("⚙️ **Configuração de Mapa**")
