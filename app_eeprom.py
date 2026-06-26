@@ -6,12 +6,48 @@ import sqlite3
 import re
 import shutil
 from PIL import Image
+from huggingface_hub import HfApi, hf_hub_download
 
-# --- ANCORAGEM DEFINITIVA DA BIBLIOTECA ---
+# --- CONFIGURAÇÕES DE NUVEM E ANCORAGEM ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.path.join(BASE_DIR, "eeprom_master.db")
 
-# --- IA GESTORA DA BIBLIOTECA (SMART MANAGER) ---
+# Configuração do Cofre Hugging Face
+HF_TOKEN = os.environ.get("HF_TOKEN")
+DATASET_REPO_ID = "GrizzlyBear25/HyperTork_DB" # <--- Se você usou outro nome no Passo 1, mude aqui
+
+# --- IA GESTORA DA BIBLIOTECA DA NUVEM ---
+def sincronizar_nuvem_para_local():
+    """Baixa o banco de dados mais recente do Dataset na nuvem ao iniciar o app"""
+    if HF_TOKEN:
+        try:
+            db_nuvem = hf_hub_download(repo_id=DATASET_REPO_ID, filename="eeprom_master.db", repo_type="dataset", token=HF_TOKEN)
+            shutil.copy(db_nuvem, DB_PATH)
+            return True
+        except Exception as e:
+            print("Nenhum banco encontrado na nuvem ou erro de acesso. Usando local.")
+    return False
+
+def backup_local_para_nuvem():
+    """Faz o upload imediato do banco de dados para o Dataset na nuvem"""
+    if HF_TOKEN and os.path.exists(DB_PATH):
+        try:
+            api = HfApi()
+            api.upload_file(
+                path_or_fileobj=DB_PATH,
+                path_in_repo="eeprom_master.db",
+                repo_id=DATASET_REPO_ID,
+                repo_type="dataset",
+                token=HF_TOKEN
+            )
+            return True
+        except Exception as e:
+            print(f"Erro no backup em nuvem: {e}")
+    return False
+
+# Roda a sincronização inicial IMEDIATAMENTE antes de ler o banco
+sincronizar_nuvem_para_local()
+
 def higienizar_nome(nome):
     if not nome: return ""
     nome_limpo = " ".join(nome.strip().upper().split())
@@ -32,10 +68,7 @@ def sincronizar_banco_com_pastas():
             os.makedirs(pasta_alvo)
             pastas_criadas += 1
             
-            dados_json = {
-                "posicao_inicio": ini, "intervalo": inter, 
-                "valores_invertidos": val_inv, "escala": esc, "detalhes": det
-            }
+            dados_json = {"posicao_inicio": ini, "intervalo": inter, "valores_invertidos": val_inv, "escala": esc, "detalhes": det}
             with open(os.path.join(pasta_alvo, "dados.json"), "w", encoding="utf-8") as f:
                 json.dump(dados_json, f, indent=4, ensure_ascii=False)
                 
@@ -81,12 +114,7 @@ def init_db():
             FOREIGN KEY (veiculo_id) REFERENCES veiculos(id) ON DELETE CASCADE
         )
     """)
-    # Nova tabela para a Memória Ativa de Aprendizado do Chip
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS chip_memoria (
-            id INTEGER PRIMARY KEY AUTOINCREMENT, chave TEXT UNIQUE NOT NULL, valor TEXT NOT NULL
-        )
-    """)
+    cursor.execute("CREATE TABLE IF NOT EXISTS chip_memoria (id INTEGER PRIMARY KEY AUTOINCREMENT, chave TEXT UNIQUE NOT NULL, valor TEXT NOT NULL)")
     conn.commit()
     conn.close()
 
@@ -96,7 +124,7 @@ init_db()
 if 'montadora_selecionada' not in st.session_state:
     st.session_state.montadora_selecionada = ""
 if 'chat_historico' not in st.session_state:
-    st.session_state.chat_historico = [{"role": "assistant", "content": "Olá! Eu sou o **Chip**. Agora eu consigo aprender coisas novas! Digite **/ajuda** para ver meus comandos e superpoderes de texto."}]
+    st.session_state.chat_historico = [{"role": "assistant", "content": "Olá! Eu sou o **Chip**. Agora estou conectado ao Cofre da Nuvem! Pode cadastrar à vontade."}]
 
 # --- FUNÇÕES DE GERENCIAMENTO ---
 def listar_montadoras():
@@ -139,10 +167,7 @@ def buscar_dados_veiculo_unificado(montadora, modelo):
             cursor.execute("SELECT foto FROM graficos WHERE veiculo_id = ? ORDER BY ordem", (v_id,))
             fotos = [f[0] for f in cursor.fetchall()]
             conn.close()
-            return {
-                "id": v_id, "posicao_inicio": row[1], "intervalo": row[2], "valores_invertidos": row[3],
-                "escala": row[4], "detalhes": row[5], "graficos": fotos
-            }
+            return {"id": v_id, "posicao_inicio": row[1], "intervalo": row[2], "valores_invertidos": row[3], "escala": row[4], "detalhes": row[5], "graficos": fotos}
         conn.close()
     except: pass
     return None
@@ -188,10 +213,7 @@ def salvar_novo_veiculo_hibrido(montadora, modelo, inicio, intervalo, info_extra
         pasta_modelo = os.path.join(BASE_DIR, montadora, modelo)
         os.makedirs(pasta_modelo, exist_ok=True)
         
-        dados_json = {
-            "posicao_inicio": inicio, "intervalo": intervalo, 
-            "valores_invertidos": valores_invertidos, "escala": escala, "detalhes": info_extra
-        }
+        dados_json = {"posicao_inicio": inicio, "intervalo": intervalo, "valores_invertidos": valores_invertidos, "escala": escala, "detalhes": info_extra}
         with open(os.path.join(pasta_modelo, "dados.json"), "w", encoding="utf-8") as f:
             json.dump(dados_json, f, indent=4, ensure_ascii=False)
         
@@ -203,6 +225,7 @@ def salvar_novo_veiculo_hibrido(montadora, modelo, inicio, intervalo, info_extra
                 with open(os.path.join(pasta_modelo, f"grafico_{idx+1}.png"), "wb") as f_img:
                     f_img.write(img_bytes)
         conn.commit()
+        backup_local_para_nuvem() # CHIP FAZ O BACKUP NA NUVEM AQUI!
         return True
     except: return False
     finally: conn.close()
@@ -215,9 +238,9 @@ def excluir_veiculo_db(montadora, modelo):
     cursor.execute("DELETE FROM veiculos WHERE montadora_nome = ? AND modelo = ?", (mont, mod))
     conn.commit()
     conn.close()
-    
     pasta_modelo = os.path.join(BASE_DIR, mont, mod)
     if os.path.exists(pasta_modelo): shutil.rmtree(pasta_modelo)
+    backup_local_para_nuvem() # CHIP FAZ O BACKUP NA NUVEM AQUI!
 
 def excluir_montadora_db(montadora):
     mont = higienizar_nome(montadora)
@@ -227,11 +250,11 @@ def excluir_montadora_db(montadora):
     cursor.execute("DELETE FROM montadoras WHERE nome = ?", (mont,))
     conn.commit()
     conn.close()
-    
     pasta_montadora = os.path.join(BASE_DIR, mont)
     if os.path.exists(pasta_montadora): shutil.rmtree(pasta_montadora)
+    backup_local_para_nuvem() # CHIP FAZ O BACKUP NA NUVEM AQUI!
 
-# --- 🧠 LÓGICA DE APRENDIZADO DO CHIP ---
+# --- 🧠 LÓGICA DE APRENDIZADO E ADMINISTRAÇÃO DO CHIP ---
 def salvar_memoria_chip(chave, valor):
     ch = chave.strip().lower()
     conn = conectar_db()
@@ -239,6 +262,7 @@ def salvar_memoria_chip(chave, valor):
     cursor.execute("INSERT OR REPLACE INTO chip_memoria (chave, valor) VALUES (?, ?)", (ch, valor.strip()))
     conn.commit()
     conn.close()
+    backup_local_para_nuvem() # Backup também ao aprender coisas novas
 
 def buscar_memoria_chip(texto):
     tx = texto.strip().lower()
@@ -248,21 +272,43 @@ def buscar_memoria_chip(texto):
     linhas = cursor.fetchall()
     conn.close()
     for chave, valor in linhas:
-        if chave in tx:
-            return f"🧠 **O que eu lembro sobre '{chave.upper()}':**\n\n{valor}"
+        if chave in tx: return f"🧠 **O que eu lembro sobre '{chave.upper()}':**\n\n{valor}"
     return None
 
 def processar_linguagem_chip(prompt_cru):
     msg = prompt_cru.strip().lower()
     
-    # Comando de Aprendizado Manual via Chat
+    if msg.startswith("/montadora ") or (any(x in msg for x in ["criar", "cadastrar", "adicione", "nova"]) and "montadora" in msg):
+        if msg.startswith("/montadora "): nome_m = prompt_cru.split("/montadora ", 1)[1].strip()
+        else:
+            partes = prompt_cru.lower().split("montadora")
+            nome_m = partes[1].replace("chamada", "").replace("a ", "").replace("uma ", "").replace("o nome", "").strip()
+
+        nome_m = higienizar_nome(nome_m)
+        if not nome_m: return "Me diga qual é o nome da montadora! Ex: `/montadora FIAT`"
+
+        conn = conectar_db()
+        cursor = conn.cursor()
+        cursor.execute("SELECT nome FROM montadoras WHERE nome = ?", (nome_m,))
+        if cursor.fetchone():
+            conn.close()
+            return f"⚠️ Ops! A montadora **{nome_m}** já existe."
+
+        cursor.execute("INSERT INTO montadoras (nome) VALUES (?)", (nome_m,))
+        conn.commit()
+        conn.close()
+        os.makedirs(os.path.join(BASE_DIR, nome_m), exist_ok=True)
+        
+        backup_local_para_nuvem() # CHIP SALVA NA NUVEM!
+        return f"🏭 **Pronto! Criei e salvei a montadora {nome_m} na nuvem!** \n\n🎨 Para a logo, coloque um arquivo `{nome_m}.png` na pasta `Logos/`."
+
     if msg.startswith("/aprender"):
         corpo = prompt_cru[9:].strip()
         if ":" in corpo:
             chave, valor = corpo.split(":", 1)
             salvar_memoria_chip(chave, valor)
-            return f"✅ Entendido! Guardei na minha memória de silício tudo sobre **'{chave.strip().upper()}'**. Pode me perguntar sobre isso quando quiser!"
-        return "⚠️ Formato incorreto. Use: `/aprender termo: significado do termo`"
+            return f"✅ Entendido! Guardei na minha memória de silício e mandei pro Cofre!"
+        return "⚠️ Formato incorreto. Use: `/aprender termo: significado`"
         
     if msg == "/memoria":
         conn = conectar_db()
@@ -271,61 +317,51 @@ def processar_linguagem_chip(prompt_cru):
         chaves = [c[0].upper() for c in cursor.fetchall()]
         conn.close()
         if chaves: return "🧠 **Termos que eu aprendi até agora:**\n\n" + "\n".join([f"* {c}" for c in chaves])
-        return "Ainda não aprendi nenhum termo customizado. Me ensine algo usando `/aprender termo: explicacao`!"
+        return "Me ensine algo usando `/aprender termo: explicacao`!"
 
-    # Verifica se há memórias salvas correspondentes no texto
     memoria_receptiva = buscar_memoria_chip(prompt_cru)
-    if memoria_receptiva:
-        return memoria_receptiva
+    if memoria_receptiva: return memoria_receptiva
 
-    # Intenções Contextuais nativas
-    if any(p in msg for p in ["apagar", "excluir", "deletar", "remover"]) and any(v in msg for v in ["veiculo", "modelo", "pasta", "não consigo", "erro"]):
-        return (
-            "🤖 **Diagnóstico do Chip:** Identifiquei que travas de exclusão aconteciam porque os arquivos físicos ficavam abertos no cache do Streamlit "
-            "ou as imagens BLOB geravam quebras de chaves estrangeiras.\n\n"
-            "⚙️ **Ajuste Aplicado:** Apliquei a biblioteca `shutil.rmtree` combinada com o comando `PRAGMA foreign_keys = ON;`. "
-            "Agora, ao excluir um veículo na aba Gerenciar, as imagens e pastas somem instantaneamente sem deixar rastros!"
-        )
-        
-    elif any(s in msg for s in ["sintaxe", "digitação", "erro de digitação", "caractere", "proibido"]):
-        return (
-            "🧠 **Análise de Sintaxe por Chip:** Eu monitoro e limpo ativamente todos os inputs textuais de nomes de marcas e modelos usando filtros Regex. "
-            "Removo caracteres proibidos pelo Windows como `\\ / * ? : \" < > |` automaticamente para blindar sua biblioteca contra quebras de diretório!"
-        )
-    
-    elif msg == "/status" or any(s in msg for s in ["status", "quantos", "biblioteca"]):
+    if msg == "/status" or any(s in msg for s in ["status", "quantos", "biblioteca"]):
         conn = conectar_db()
         c = conn.cursor()
         c.execute("SELECT COUNT(*) FROM montadoras"); q_m = c.fetchone()[0]
         c.execute("SELECT COUNT(*) FROM veiculos"); q_v = c.fetchone()[0]
         conn.close()
-        return f"📊 **Status da Ficha Técnica:** Atualmente existem **{q_m} montadoras** e **{q_v} modelos** gravados no banco de dados. Tudo verificado!"
+        return f"📊 **Status:** Temos **{q_m} montadoras** e **{q_v} modelos** gravados no banco de dados."
 
-    elif msg == "/sync" or any(s in msg for s in ["sincronizar", "sync", "recuperar"]):
+    elif msg == "/sync":
         qtd = sincronizar_banco_com_pastas()
-        return f"🔄 **Ação Efetuada:** Rodes o diagnóstico do sistema e reconstruí com sucesso **{qtd} pastas** físicas locais a partir dos metadados do banco!"
+        return f"🔄 **Ação Efetuada:** Reconstruí com sucesso **{qtd} pastas** físicas locais a partir do banco!"
 
-    elif msg == "/backup" or any(b in msg for b in ["backup", "salvar", "segurança"]):
-        return f"🛡️ **Dica de Proteção:** O arquivo definitivo que contém toda a inteligência e os mapas salvos é o **`eeprom_master.db`** localizado em `{BASE_DIR}`. Copie ele e seus dados estarão 100% salvos."
+    elif msg == "/backup":
+        return f"🛡️ **Status de Backup:** Agora eu faço backup automático direto no Dataset `HyperTork_DB` toda vez que você altera algo!"
 
     elif msg == "/ajuda":
         return (
-            "🤖 **Guia de Treinamento do Chip:**\n\n"
-            "**Comandos Rápidos:**\n"
-            "* `/status` -> Exibe as estatísticas do banco de dados.\n"
-            "* `/sync` -> Varre e regenera pastas físicas deletadas por engano.\n"
-            "* `/backup` -> Mostra onde está o arquivo de segurança.\n"
-            "* `/memoria` -> Lista tudo o que você me ensinou.\n"
-            "* `/limpar` -> Limpa o terminal.\n\n"
-            "**Como me ensinar coisas:**\n"
-            "Digite no chat: `/aprender SeuTermo: Sua Explicação Completa`"
+            "🤖 **Guia do Chip:**\n\n"
+            "* `/montadora NOME` -> Crio uma montadora.\n"
+            "* `/status` -> Exibe estatísticas.\n"
+            "* `/sync` -> Regenera pastas físicas.\n"
+            "* `/memoria` -> Lista ensinamentos.\n"
+            "* `/limpar` -> Limpa o chat.\n"
+            "`/aprender Termo: Explicação`"
         )
 
     elif any(c in msg for c in ["oi", "olá", "bom dia", "boa tarde"]):
-        return "🤖 Olá! Sou o **Chip**, assistente oficial do HyperTork. Estou pronto para gerenciar as memórias EEPROM e aprender novos comandos!"
-        
+        return "🤖 Olá! Sou o **Chip**. Meu sistema de persistência em Nuvem está 100% online!"
     else:
-        return "🤔 Não consegui pescar a intenção dessa frase. Digite **/ajuda** para ver os comandos ou me ensine este termo usando o padrão `/aprender`!"
+        return "🤔 Não entendi. Digite **/ajuda** para ver os comandos."
+
+# --- 🖼️ MODAL DE ZOOM EXPANDIDO EM TELA CHEIA ---
+@st.dialog("🔍 Visualizador de Mapa Ampliado", width="large")
+def abrir_modal_zoom(foto_bytes, legenda_titulo):
+    st.write(f"#### {legenda_titulo}")
+    zoom_dinamico = st.slider("Arraste para ajustar o Zoom do Mapa (Pixels)", 400, 2000, 950, step=50)
+    st.image(foto_bytes, width=zoom_dinamico)
+    st.write("")
+    if st.button("❌ Fechar Visualização", use_container_width=True):
+        st.rerun()
 
 # --- 🎨 ESTILIZAÇÃO CSS ---
 st.markdown("""
@@ -339,7 +375,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- BARRA LATERAL (MENU + INTERACTION COM CHIP) ---
+# --- BARRA LATERAL (MENU + CHAT CHIP) ---
 st.sidebar.title("🛡️ HyperTork System")
 if st.sidebar.button("🏠 Voltar para Tela Inicial", use_container_width=True):
     st.session_state.montadora_selecionada = ""
@@ -352,11 +388,10 @@ for mensagem in st.session_state.chat_historico:
     with st.sidebar.chat_message(mensagem["role"]):
         st.markdown(mensagem["content"])
 
-if prompt := st.sidebar.chat_input("Fale com o Chip ou ensine um comando..."):
+if prompt := st.sidebar.chat_input("Fale com o Chip..."):
     st.session_state.chat_historico.append({"role": "user", "content": prompt})
-    
     if prompt.strip().lower() == "/limpar":
-        st.session_state.chat_historico = [{"role": "assistant", "content": "Histórico redefinido! Como o Chip pode te ajudar agora?"}]
+        st.session_state.chat_historico = [{"role": "assistant", "content": "Histórico redefinido!"}]
         st.rerun()
     else:
         resposta = processar_linguagem_chip(prompt)
@@ -373,7 +408,7 @@ if st.session_state.montadora_selecionada == "":
     st.write("")
 
     if not montadoras_existentes:
-        st.info("Nenhuma montadora cadastrada. Use a área administrativa abaixo para iniciar seu Banco de Dados.")
+        st.info("Nenhuma montadora cadastrada. Use a área administrativa ou peça ao Chip para criar uma!")
     else:
         cols = st.columns(4)
         for i, m in enumerate(montadoras_existentes):
@@ -440,19 +475,22 @@ else:
                 if not dados_mapa or not dados_mapa["graficos"]:
                     st.error("⚠️ Nenhuma imagem de mapa encontrada para este veículo.")
                 else:
-                    # ATUALIZADO: Ferramenta de Zoom Dinâmico por Lente de Controle Deslizante
-                    st.caption("💡 *Dica:* Passe o mouse por cima do mapa para abrir o botão de **Tela Cheia** nativo no canto superior direito da foto.")
-                    tamanho_zoom = st.slider("🔍 Controle de Zoom da Imagem (Largura em Pixels)", 300, 1600, 750, step=50)
-                    
                     lista_fotos = dados_mapa["graficos"]
                     for idx in range(0, len(lista_fotos), 2):
                         sub_cols = st.columns(2)
                         with sub_cols[0]:
                             if idx < len(lista_fotos):
-                                st.image(lista_fotos[idx], width=tamanho_zoom, caption=f"Gráfico Principal ({idx+1})")
+                                label_cap = f"Gráfico Principal ({idx+1})"
+                                st.image(lista_fotos[idx], use_container_width=True, caption=label_cap)
+                                if st.button(f"🔍 Expandir e Dar Zoom ({idx+1})", key=f"btn_zoom_{idx}", use_container_width=True):
+                                    abrir_modal_zoom(lista_fotos[idx], label_cap)
+                                    
                         with sub_cols[1]:
                             if idx + 1 < len(lista_fotos):
-                                st.image(lista_fotos[idx+1], width=tamanho_zoom, caption=f"Gráfico Complementar ({idx+2})")
+                                label_cap_2 = f"Gráfico Complementar ({idx+2})"
+                                st.image(lista_fotos[idx+1], use_container_width=True, caption=label_cap_2)
+                                if st.button(f"🔍 Expandir e Dar Zoom ({idx+2})", key=f"btn_zoom_{idx+1}", use_container_width=True):
+                                    abrir_modal_zoom(lista_fotos[idx+1], label_cap_2)
                 
                 with st.container(border=True):
                     st.markdown("⚙️ **Configuração de Mapa**")
@@ -472,10 +510,9 @@ else:
                         st.write("**Detalhes do Veículo:**")
                         st.info(dados_mapa["detalhes"])
 
-# --- SEÇÃO ADMINISTRATIVA INTEGRALMENTE SEPARADA ---
+# --- SEÇÃO ADMINISTRATIVA INDEPENDENTE COM NOTIFICAÇÕES SEVERAS ---
 st.markdown("<br><br>", unsafe_allow_html=True)
 
-# PROCESSOS DE SALVAMENTO COMPLETAMENTE INDEPENDENTES
 with st.expander("➕ CADASTRAR: Adicionar Estruturas Independentes"):
     cad_tab1, cad_tab2 = st.tabs(["🏭 Cadastrar Montadora", "🚗 Cadastrar Veículo"])
     
@@ -484,18 +521,19 @@ with st.expander("➕ CADASTRAR: Adicionar Estruturas Independentes"):
         nova_m = st.text_input("Digite o Nome da Montadora", key="input_nova_m").strip()
         if st.button("Efetivar Montadora", type="primary"):
             if not nova_m:
-                st.error("❌ Erro: O campo de nome da montadora não pode ficar em branco!")
+                st.error("❌ Erro de Cadastro: O campo de nome da montadora não pode ficar em branco!")
             else:
                 m_hig = higienizar_nome(nova_m)
                 if m_hig in montadoras_existentes:
-                    st.warning(f"⚠️ Atenção: A montadora '{m_hig}' já encontra-se cadastrada no sistema!")
+                    st.error(f"❌ Falha de Duplicidade: A montadora '{m_hig}' já encontra-se cadastrada no banco de dados!")
                 else:
                     conn = conectar_db()
                     cursor = conn.cursor()
                     cursor.execute("INSERT INTO montadoras (nome) VALUES (?)", (m_hig,))
                     conn.commit(); conn.close()
                     os.makedirs(os.path.join(BASE_DIR, m_hig), exist_ok=True)
-                    st.success(f"✅ Sucesso: Montadora '{m_hig}' cadastrada com êxito!")
+                    backup_local_para_nuvem() # Backup na criação manual
+                    st.success(f"✅ Sucesso Absoluto: Montadora '{m_hig}' foi salva no Dataset em Nuvem!")
                     st.rerun()
                     
     with cad_tab2:
@@ -518,20 +556,20 @@ with st.expander("➕ CADASTRAR: Adicionar Estruturas Independentes"):
             if st.button("Efetivar Veículo", type="primary"):
                 v_hig = higienizar_nome(v_form)
                 if not v_form:
-                    st.error("❌ Erro: O nome do modelo é obrigatório!")
+                    st.error("❌ Erro de Validação: O nome do modelo/veículo é obrigatório!")
                 else:
                     modelos_da_marca = listar_modelos(m_form)
                     if v_hig in modelos_da_marca:
-                        st.error(f"❌ Erro: Já existe um veículo chamado '{v_hig}' cadastrado na marca {m_form}!")
+                        st.error(f"❌ Falha de Duplicidade: O veículo '{v_hig}' já existe na montadora {m_form}!")
                     else:
                         status_save = salvar_novo_veiculo_hibrido(m_form, v_form, v_ini, v_int, v_det, v_inv, v_esc, v_files)
                         if status_save:
-                            st.success(f"✅ Sucesso: Veículo '{v_hig}' gravado e sincronizado com estabilidade!")
+                            st.success(f"✅ Sucesso Absoluto: Ficha técnica do modelo '{v_hig}' sincronizada com a Nuvem!")
                             st.rerun()
                         else:
-                            st.error("❌ Erro Crítico: Falha interna de IO ao tentar gravar os mapas.")
+                            st.error("❌ Erro de Gravação.")
 
-# EDICAO E EXCLUSÃO SEPARADAS EM MONTADORAS E VEÍCULOS
+# --- GERENCIAMENTO DE ALTERAÇÃO SEPARADO (EDICAO TOTAL) ---
 with st.expander("⚙️ GERENCIAR: Painel de Edição e Exclusão Total"):
     ger_tab1, ger_tab2 = st.tabs(["🏭 Gerenciar Montadoras", "🚗 Gerenciar Veículos"])
     
@@ -541,42 +579,38 @@ with st.expander("⚙️ GERENCIAR: Painel de Edição e Exclusão Total"):
             st.warning("Nenhuma montadora localizada.")
         else:
             m_select_edit = st.selectbox("Escolha a Montadora para Alterar", montadoras_existentes, key="sb_m_edit_pane")
-            
-            st.markdown("#### Opções de Ajuste:")
             novo_nome_m = st.text_input("Alterar Nome da Montadora para:", value=m_select_edit, key="txt_rename_m").strip()
             
             m_ed_col1, m_ed_col2 = st.columns(2)
             if m_ed_col1.button("💾 Salvar Novo Nome da Montadora", key="btn_rename_m"):
                 n_m_hig = higienizar_nome(novo_nome_m)
-                if not n_m_hig:
-                    st.error("❌ Erro: O nome não pode ficar em branco.")
-                elif n_m_hig in montadoras_existentes and n_m_hig != m_select_edit:
-                    st.error("❌ Erro: Esse nome de montadora já existe!")
+                if not n_m_hig: st.error("❌ Erro: Nome nulo inválido.")
+                elif n_m_hig in montadoras_existentes and n_m_hig != m_select_edit: st.error("❌ Erro: Essa montadora já existe!")
                 else:
                     conn = conectar_db()
                     cursor = conn.cursor()
                     cursor.execute("UPDATE montadoras SET nome = ? WHERE nome = ?", (n_m_hig, m_select_edit))
                     cursor.execute("UPDATE veiculos SET montadora_nome = ? WHERE montadora_nome = ?", (n_m_hig, m_select_edit))
                     conn.commit(); conn.close()
-                    
                     old_path = os.path.join(BASE_DIR, m_select_edit)
                     new_path = os.path.join(BASE_DIR, n_m_hig)
                     if os.path.exists(old_path): os.rename(old_path, new_path)
                     
-                    st.success("✅ Sucesso: Marca alterada globalmente!")
+                    backup_local_para_nuvem() # Backup após edição
+                    st.success("✅ Sucesso: Nome da marca atualizado globalmente e na Nuvem!")
                     st.session_state.montadora_selecionada = ""
                     st.rerun()
                     
             if m_ed_col2.button("🗑️ Excluir Montadora (Apaga Tudo)", key="btn_del_m_pane"):
                 excluir_montadora_db(m_select_edit)
-                st.success(f"✅ Limpeza concluída: Montadora {m_select_edit} eliminada.")
+                st.success(f"✅ Limpeza concluída e Nuvem sincronizada.")
                 st.session_state.montadora_selecionada = ""
                 st.rerun()
 
     with ger_tab2:
         st.subheader("Edição Completa de Veículos")
         if not montadoras_existentes:
-            st.warning("Sem dados cadastrados.")
+            st.warning("Sem marcas salvas.")
         else:
             m_sel_v = st.selectbox("Filtrar por Montadora", montadoras_existentes, key="sb_m_sel_v")
             v_existentes = listar_modelos(m_sel_v)
@@ -604,48 +638,38 @@ with st.expander("⚙️ GERENCIAR: Painel de Edição e Exclusão Total"):
                     esc_opcoes = ["8 bits", "16 bits", "32 bits"]
                     esc_idx = esc_opcoes.index(dados_v["escala"]) if dados_v["escala"] in esc_opcoes else 0
                     v_novo_esc = ve_c4.selectbox("Escala do Mapa", esc_opcoes, index=esc_idx, key="sb_v_esc_edit")
-                    
                     v_novo_det = st.text_area("Alterar Detalhes do Veículo", value=dados_v["detalhes"], key="txt_v_det_edit")
                     
-                    st.warning("⚠️ Enviar novas fotos substituirá completamente as imagens salvas deste veículo!")
+                    st.warning("⚠️ Atenção: Enviar novas fotos substituirá todas as imagens antigas deste veículo!")
                     v_novas_fotos = st.file_uploader("Substituir Imagens de Mapas (Máx 6)", type=["png", "jpg", "jpeg"], accept_multiple_files=True, key="files_v_edit")
                     
                     v_manage_col1, v_manage_col2 = st.columns(2)
                     
                     if v_manage_col1.button("💾 Salvar Todas as Alterações do Veículo", type="primary", key="btn_save_v_edit"):
                         n_v_hig = higienizar_nome(v_novo_nome)
-                        if not n_v_hig:
-                            st.error("❌ Erro: O nome do modelo não pode ser nulo.")
+                        if not n_v_hig: st.error("❌ Erro: O nome do modelo não pode ser vazio.")
                         else:
-                            # Se mudou o nome, verifica duplicata
                             if n_v_hig != v_sel_edit and n_v_hig in v_existentes:
-                                st.error("❌ Erro: Já existe outro modelo com esse nome nesta montadora!")
+                                st.error("❌ Erro de Duplicidade: Já existe outro modelo com esse nome nesta montadora!")
                             else:
-                                # Se houve mudança de nome, limpa a pasta anterior física
                                 if n_v_hig != v_sel_edit:
                                     velha_pasta = os.path.join(BASE_DIR, m_sel_v, v_sel_edit)
                                     if os.path.exists(velha_pasta): shutil.rmtree(velha_pasta)
-                                    
                                     conn = conectar_db()
                                     cursor = conn.cursor()
                                     cursor.execute("UPDATE veiculos SET modelo = ? WHERE id = ?", (n_v_hig, dados_v["id"]))
                                     conn.commit(); conn.close()
                                 
-                                # Salva o restante das configurações atualizadas
-                                fotos_para_salvar = v_novas_fotos if v_novas_fotos else None
-                                
-                                # Se não enviou novas fotos, precisamos resgatar os bytes do banco para repopular a nova pasta física se o nome mudou
                                 if n_v_hig != v_sel_edit and not v_novas_fotos:
                                     salvar_novo_veiculo_hibrido(m_sel_v, n_v_hig, v_novo_ini, v_novo_int, v_novo_det, v_novo_inv, v_novo_esc, None)
-                                    # Força sincronia de fotos antigas para a nova pasta
                                     sincronizar_banco_com_pastas()
                                 else:
                                     salvar_novo_veiculo_hibrido(m_sel_v, n_v_hig, v_novo_ini, v_novo_int, v_novo_det, v_novo_inv, v_novo_esc, v_novas_fotos)
                                     
-                                st.success(f"✅ Sucesso: Modelo '{n_v_hig}' atualizado em toda a árvore de arquivos!")
+                                st.success(f"✅ Sucesso: O veículo '{n_v_hig}' foi modificado e salvo na Nuvem com estabilidade!")
                                 st.rerun()
                                 
                     if v_manage_col2.button("🗑️ Excluir Este Veículo do Sistema", key="btn_del_v_edit"):
                         excluir_veiculo_db(m_sel_v, v_sel_edit)
-                        st.success(f"✅ Remoção Concluída: Veículo {v_sel_edit} excluído.")
+                        st.success(f"✅ Remoção Concluída na Nuvem!")
                         st.rerun()
