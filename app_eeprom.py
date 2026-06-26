@@ -477,4 +477,4 @@ with st.expander("⚙️ GERENCIAR: Editar ou Excluir Dados"):
             st.error(f"Atenção: Isso apagará a montadora {del_m} e TODOS os seus veículos.")
             if st.button("⚠️ Confirmar Exclusão de Montadora"):
                 excluir_montadora_db(del_m)
-                st.success("Montadora apagada do Sistema!"); st.rerun()
+                st.success("Montadora apagada do Sistema!"); st.rerun() 
