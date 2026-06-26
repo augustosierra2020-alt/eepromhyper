@@ -4,6 +4,7 @@ import json
 import base64
 import sqlite3
 import re
+import shutil  # Biblioteca para remoção completa de pastas físicas
 from PIL import Image
 
 # --- ANCORAGEM DEFINITIVA DA BIBLIOTECA ---
@@ -59,7 +60,10 @@ if not os.path.exists(LOGOS_DIR):
 st.set_page_config(page_title="EEPROM Master System", layout="wide")
 
 def conectar_db():
-    return sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH)
+    # CORREÇÃO: Força o SQLite a respeitar a exclusão em cascata (deletar fotos junto com o veículo)
+    conn.execute("PRAGMA foreign_keys = ON;")
+    return conn
 
 def init_db():
     conn = conectar_db()
@@ -87,10 +91,9 @@ init_db()
 if 'montadora_selecionada' not in st.session_state:
     st.session_state.montadora_selecionada = ""
 if 'chat_historico' not in st.session_state:
-    # O Chip agora se apresenta formalmente!
-    st.session_state.chat_historico = [{"role": "assistant", "content": "Olá! Eu sou o **Chip**, seu assistente de sistema. Digite **/ajuda** para ver os comandos disponíveis."}]
+    st.session_state.chat_historico = [{"role": "assistant", "content": "Olá! Eu sou o **Chip**, seu assistente inteligente. Pode falar comigo por comandos ou descrever suas dúvidas sobre a biblioteca!"}]
 
-# --- FUNÇÕES DE GERENCIAMENTO (CRUD HÍBRIDO) ---
+# --- FUNÇÕES DE GERENCIAMENTO (CRUD HÍBRIDO CORRIGIDO) ---
 def listar_montadoras():
     montadoras = set()
     try:
@@ -203,20 +206,89 @@ def salvar_novo_veiculo_hibrido(montadora, modelo, inicio, intervalo, info_extra
         conn.close()
 
 def excluir_veiculo_db(montadora, modelo):
+    """CORRIGIDO: Remove do BD e limpa a pasta física para não deixar arquivos órfãos"""
+    mont = higienizar_nome(montadora)
+    mod = higienizar_nome(modelo)
+    
     conn = conectar_db()
     cursor = conn.cursor()
-    cursor.execute("DELETE FROM veiculos WHERE montadora_nome = ? AND modelo = ?", (higienizar_nome(montadora), higienizar_nome(modelo)))
+    cursor.execute("DELETE FROM veiculos WHERE montadora_nome = ? AND modelo = ?", (mont, mod))
     conn.commit()
     conn.close()
+    
+    # Remove a pasta física do computador
+    pasta_modelo = os.path.join(BASE_DIR, mont, mod)
+    if os.path.exists(pasta_modelo):
+        shutil.rmtree(pasta_modelo)
 
 def excluir_montadora_db(montadora):
+    """CORRIGIDO: Remove a montadora do BD e apaga todas as suas pastas físicas"""
     mont = higienizar_nome(montadora)
+    
     conn = conectar_db()
     cursor = conn.cursor()
     cursor.execute("DELETE FROM veiculos WHERE montadora_nome = ?", (mont,))
     cursor.execute("DELETE FROM montadoras WHERE nome = ?", (mont,))
     conn.commit()
     conn.close()
+    
+    # Remove a pasta física da montadora inteira
+    pasta_montadora = os.path.join(BASE_DIR, mont)
+    if os.path.exists(pasta_montadora):
+        shutil.rmtree(pasta_montadora)
+
+# --- 🧠 IA CHIP: INTERPRETAÇÃO DE TEXTO ---
+def processar_linguagem_chip(texto_usuario):
+    msg = texto_usuario.strip().lower()
+    
+    # Intenção: Problemas ao apagar / remover arquivos
+    if any(p in msg for p in ["apagar", "excluir", "deletar", "remover"]) and any(v in msg for v in ["veiculo", "modelo", "pasta", "não consigo", "erro"]):
+        return (
+            "🤖 **Diagnóstico do Chip:** Opa! Analisei seu cenário aqui.\n\n"
+            "Se o sistema falhou ao apagar antes, isso acontecia porque o banco deletava o registro, mas a **pasta física ficava presa no Windows/Linux**, ou porque as tabelas de gráficos travavam.\n\n"
+            "🛠️ **O que eu fiz para corrigir:** Acabei de blindar as funções `excluir_veiculo_db` e `excluir_montadora_db` usando o comando de limpeza profunda (`shutil.rmtree`) e ativei o `PRAGMA foreign_keys = ON`. "
+            "Agora, quando você apaga na aba **GERENCIAR**, eu destruo o arquivo do banco e a pasta física ao mesmo tempo!\n\n"
+            "💡 *Dica do Chip:* Certifique-se de que nenhum gráfico desse veículo esteja aberto em um visualizador de fotos do seu PC na hora de apagar, combinado?"
+        )
+        
+    # Intenção: Dúvidas sobre erros de sintaxe ou digitação
+    elif any(s in msg for s in ["sintaxe", "digitação", "typo", "erro de digitação", "caractere"]):
+        return (
+            "🧠 **Análise de Sintaxe do Chip:** Fique tranquilo! Eu possuo uma rotina de monitoramento ativo. "
+            "Toda vez que você digita o nome de uma marca ou modelo, eu rodo a função `higienizar_nome` com o filtro de segurança `re.sub(r'[\\\\/*?:\"<>|]', '', nome)`.\n\n"
+            "Isso significa que eu **corrijo automaticamente** erros de digitação como espaços duplos e removo símbolos que o Windows proíbe em pastas. "
+            "O único ponto que você precisa revisar manualmente são os endereços hexadecimais (Início e Intervalo) para garantir que não digitou letras inválidas fora do padrão técnico."
+        )
+    
+    # Intenção: Pedido de Status
+    elif comando == "/status" or any(s in msg for s in ["status", "quantos", "biblioteca"]):
+        conn = conectar_db()
+        c = conn.cursor()
+        c.execute("SELECT COUNT(*) FROM montadoras"); qtd_m = c.fetchone()[0]
+        c.execute("SELECT COUNT(*) FROM veiculos"); qtd_v = c.fetchone()[0]
+        conn.close()
+        return f"📊 **Status da Biblioteca pelo Chip:** Atualmente gerencio **{qtd_m} montadoras** e **{qtd_v} veículos**. Tudo mapeado e higienizado!"
+
+    # Intenção: Pedido de Sincronização
+    elif comando == "/sync" or any(s in msg for s in ["sincronizar", "sync", "recuperar", "pastas"]):
+        qtd = sincronizar_banco_com_pastas()
+        return f"✅ **Ação do Chip:** Sincronização executada! Varri o banco `.db` e acabei de reconstruir **{qtd} pastas** físicas que estavam ausentes no diretório."
+
+    # Intenção: Pedido de Backup
+    elif comando == "/backup" or any(b in msg for b in ["backup", "salvar", "segurança"]):
+        return f"🛡️ **Segurança por Chip:** Para fazer seu backup completo e levar seus dados para o GitHub ou Hugging Face, copie apenas o arquivo **`eeprom_master.db`** localizado na pasta `{BASE_DIR}`."
+
+    # Intenção: Ajuda Geral
+    elif comando == "/ajuda" or any(a in msg for a in ["ajuda", "help", "o que você faz"]):
+        return "**O que você pode me pedir (via texto ou comando):**\n\n* Perguntar sobre problemas de exclusão.\n* Tirar dúvidas sobre erros de sintaxe.\n* Pedir o status geral da biblioteca (`/status`).\n* Sincronizar os diretórios locais (`/sync`).\n* Saber como fazer cópia de segurança (`/backup`)."
+
+    # Cumprimentos
+    elif any(c in msg for c in ["oi", "olá", "bom dia", "boa tarde", "chip"]):
+        return "🤖 Olá! **Chip** na área. Sou o guardião das suas baias EEPROM. Em que posso te ajudar hoje? Pode digitar sua dúvida naturalmente!"
+
+    # Fallback caso não entenda a frase complexa
+    else:
+        return "🤔 *O Chip está processando...* Ainda estou aprimorando meu vocabulário para frases tão complexas! Mas entendo muito bem se você me perguntar sobre **'erro de sintaxe'**, **'problema para apagar'** ou usar os comandos `/status`, `/sync` e `/backup`!"
 
 # --- 🎨 CONTROLE VISUAL ---
 st.markdown("""
@@ -230,57 +302,28 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- BARRA LATERAL (MENU + BOT CHIP) ---
+# --- BARRA LATERAL (MENU + BOT CHIP INTERATIVO) ---
 st.sidebar.title("🛡️ EEPROM System")
 if st.sidebar.button("🏠 Voltar para Tela Inicial", use_container_width=True):
     st.session_state.montadora_selecionada = ""
     st.rerun()
 
 st.sidebar.markdown("---")
-st.sidebar.markdown("🤖 **Chip - Assistente do Sistema**")
+st.sidebar.markdown("🤖 **Chip - Assistente Inteligente**")
 
-# Loop para exibir o histórico de mensagens do Chip na barra lateral
 for mensagem in st.session_state.chat_historico:
     with st.sidebar.chat_message(mensagem["role"]):
         st.markdown(mensagem["content"])
 
-# Caixa de texto do chat do Chip
-if prompt := st.sidebar.chat_input("Fale com o Chip (ex: /status)"):
+if prompt := st.sidebar.chat_input("Converse com o Chip..."):
     st.session_state.chat_historico.append({"role": "user", "content": prompt})
     
+    # Ativa a nova IA de processamento de texto do Chip
     comando = prompt.strip().lower()
-    resposta = ""
+    resposta = processar_linguagem_chip(prompt)
     
-    if comando == "/ajuda":
-        resposta = "**O que o Chip sabe fazer:**\n* `/status`: Vê os números do sistema.\n* `/sync`: Reconstrói pastas físicas.\n* `/backup`: Dica de segurança.\n* `/limpar`: Limpa o chat."
-    
-    elif comando == "/status":
-        conn = conectar_db()
-        c = conn.cursor()
-        c.execute("SELECT COUNT(*) FROM montadoras")
-        qtd_m = c.fetchone()[0]
-        c.execute("SELECT COUNT(*) FROM veiculos")
-        qtd_v = c.fetchone()[0]
-        conn.close()
-        resposta = f"📊 **Status da Biblioteca:**\nVocê tem **{qtd_m} montadoras** cadastradas e um total de **{qtd_v} veículos**. O Chip está de olho em tudo!"
-    
-    elif comando == "/sync":
-        qtd = sincronizar_banco_com_pastas()
-        resposta = f"✅ **Sincronização concluída!** O Chip verificou o banco e garantiu que **{qtd} pastas** físicas estivessem perfeitas no seu computador."
-    
-    elif comando == "/backup":
-        resposta = f"🛡️ **Dica de Backup do Chip:** Para não perder nada, basta fazer uma cópia de segurança do arquivo chamado `eeprom_master.db` que está na pasta `{BASE_DIR}`."
-        
-    elif comando == "/limpar":
-        st.session_state.chat_historico = [{"role": "assistant", "content": "Chat limpo! Como o Chip pode te ajudar agora?"}]
-        st.rerun()
-        
-    else:
-        resposta = "⚠️ Comando não reconhecido. Digite **/ajuda** para ver o que o Chip sabe fazer."
-    
-    if resposta:
-        st.session_state.chat_historico.append({"role": "assistant", "content": resposta})
-        st.rerun()
+    st.session_state.chat_historico.append({"role": "assistant", "content": resposta})
+    st.rerun()
 
 st.sidebar.markdown("---")
 montadoras_existentes = listar_montadoras()
@@ -477,4 +520,4 @@ with st.expander("⚙️ GERENCIAR: Editar ou Excluir Dados"):
             st.error(f"Atenção: Isso apagará a montadora {del_m} e TODOS os seus veículos.")
             if st.button("⚠️ Confirmar Exclusão de Montadora"):
                 excluir_montadora_db(del_m)
-                st.success("Montadora apagada do Sistema!"); st.rerun() 
+                st.success("Montadora apagada do Sistema!"); st.rerun()
