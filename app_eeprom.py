@@ -121,7 +121,7 @@ init_db()
 if 'montadora_selecionada' not in st.session_state:
     st.session_state.montadora_selecionada = ""
 if 'chat_historico' not in st.session_state:
-    st.session_state.chat_historico = [{"role": "assistant", "content": "Olá! Eu sou o **Chip**. Fui atualizado com um processador de linguagem natural. Pode falar comigo de forma bem humana!"}]
+    st.session_state.chat_historico = [{"role": "assistant", "content": "Olá! Eu sou o **Chip**. Fui promovido a Operador! Você pode me pedir para cadastrar, renomear ou excluir veículos direto por aqui."}]
 
 # --- FUNÇÕES DE GERENCIAMENTO ---
 def listar_montadoras():
@@ -274,7 +274,6 @@ def buscar_memoria_chip(texto):
     linhas = cursor.fetchall()
     conn.close()
     for chave, valor in linhas:
-        # Busca difusa (fuzzy search simplificada)
         if chave in tx or tx in chave: 
             return f"🧠 **O que eu lembro sobre '{chave.upper()}':**\n\n{valor}"
     return None
@@ -282,21 +281,96 @@ def buscar_memoria_chip(texto):
 def processar_linguagem_chip(prompt_cru):
     msg = normalizar_texto(prompt_cru)
     
-    # 1. INTENÇÃO: Criar Montadora
+    # 1. INTENÇÃO: Renomear Montadora
+    if "renomear montadora" in msg:
+        try:
+            partes = msg.split("renomear montadora ")[1].split(" para ")
+            antiga = higienizar_nome(partes[0])
+            nova = higienizar_nome(partes[1])
+            
+            conn = conectar_db()
+            cursor = conn.cursor()
+            cursor.execute("SELECT nome FROM montadoras WHERE nome = ?", (antiga,))
+            if not cursor.fetchone():
+                conn.close()
+                return f"⚠️ Não encontrei a montadora '{antiga}' para renomear."
+                
+            cursor.execute("UPDATE montadoras SET nome = ? WHERE nome = ?", (nova, antiga))
+            cursor.execute("UPDATE veiculos SET montadora_nome = ? WHERE montadora_nome = ?", (nova, antiga))
+            conn.commit(); conn.close()
+            
+            old_path = os.path.join(BASE_DIR, antiga)
+            new_path = os.path.join(BASE_DIR, nova)
+            if os.path.exists(old_path): os.rename(old_path, new_path)
+            
+            backup_local_para_nuvem()
+            return f"🔄 **Operação Feita!** A montadora `{antiga}` agora se chama `{nova}` em todo o sistema e na Nuvem!"
+        except:
+            return "⚠️ Para eu entender, use exatamente o formato: `Chip, renomear montadora [NOME ANTIGO] para [NOME NOVO]`"
+
+    # 2. INTENÇÃO: Cadastrar Veículo
+    if "cadastrar veiculo" in msg or "criar veiculo" in msg:
+        try:
+            txt = msg.replace("criar veiculo", "cadastrar veiculo")
+            partes = txt.split("cadastrar veiculo ")[1].split(" na montadora ")
+            mod = higienizar_nome(partes[0])
+            mont = higienizar_nome(partes[1])
+            
+            conn = conectar_db()
+            cursor = conn.cursor()
+            cursor.execute("SELECT nome FROM montadoras WHERE nome = ?", (mont,))
+            if not cursor.fetchone():
+                conn.close()
+                return f"⚠️ A montadora '{mont}' não existe. Peça para eu criá-la primeiro!"
+            conn.close()
+            
+            # Cria o veículo com dados base
+            salvar_novo_veiculo_hibrido(mont, mod, "Não Definido", "Não Definido", "Criado pelo Chip via Chat", "Desativado", "8 bits", None)
+            return f"🚗 **Ficha Criada!** Adicionei o veículo `{mod}` na montadora `{mont}` e salvei no Cofre.\n\n💡 *Dica:* Como sou um bot de texto, vá até a aba **⚙️ GERENCIAR** depois para inserir os Hexadecimais reais e fazer o upload das fotos!"
+        except:
+            return "⚠️ Para eu cadastrar o carro, use o formato: `Chip, cadastrar veiculo [CARRO] na montadora [MARCA]`"
+
+    # 3. INTENÇÃO: Excluir Veículo
+    if "excluir veiculo" in msg or "apagar veiculo" in msg:
+        try:
+            txt = msg.replace("apagar veiculo", "excluir veiculo")
+            partes = txt.split("excluir veiculo ")[1].split(" da montadora ")
+            mod = higienizar_nome(partes[0])
+            mont = higienizar_nome(partes[1])
+            
+            excluir_veiculo_db(mont, mod)
+            return f"🗑️ **Excluído!** O veículo `{mod}` foi deletado permanentemente da montadora `{mont}`."
+        except:
+            return "⚠️ Para eu apagar, use o formato: `Chip, excluir veiculo [CARRO] da montadora [MARCA]`"
+
+    # 4. INTENÇÃO: Excluir Montadora
+    if "excluir montadora" in msg or "apagar montadora" in msg:
+        try:
+            txt = msg.replace("apagar montadora", "excluir montadora")
+            mont = higienizar_nome(txt.split("excluir montadora ")[1])
+            excluir_montadora_db(mont)
+            return f"💥 **Destruição Concluída!** A montadora `{mont}` e todos os seus veículos foram apagados da existência."
+        except:
+            return "⚠️ Para eu apagar a marca inteira, use: `Chip, excluir montadora [NOME]`"
+
+    # 5. INTENÇÃO: Editar Veículo (Guia para UI)
+    if "editar informacoes" in msg or "editar veiculo" in msg or "editar carro" in msg:
+        return "🛠️ **Edição de Ficha Técnica:** Eu consigo criar e apagar arquivos, mas para alterar endereços Hexadecimais e **adicionar fotos**, por favor use a aba de botões **⚙️ GERENCIAR** logo abaixo do painel principal. Meu terminal de texto ainda não consegue fazer upload de fotos do seu HD!"
+
+    # 6. INTENÇÃO: Criar Montadora
     padroes_criar = ["cria a montadora", "crie a montadora", "criar montadora", "adicione a montadora", "nova montadora", "/montadora"]
     if any(p in msg for p in padroes_criar):
         nome_m = ""
         if "/montadora" in msg:
             nome_m = prompt_cru.split("/montadora", 1)[1].strip()
         else:
-            # Tenta extrair o que vem depois da palavra "montadora"
             partes = msg.split("montadora")
             if len(partes) > 1:
                 nome_m = partes[1].replace("chamada", "").replace("a ", "").replace("uma ", "").replace("o nome", "").strip()
 
         nome_m = higienizar_nome(nome_m)
         if not nome_m: 
-            return "Entendi que quer criar uma montadora, mas faltou me dizer o nome! Exemplo: `Crie a montadora FIAT`"
+            return "Entendi que quer criar uma montadora, mas qual o nome? Exemplo: `Crie a montadora AUDI`"
 
         conn = conectar_db()
         cursor = conn.cursor()
@@ -312,7 +386,7 @@ def processar_linguagem_chip(prompt_cru):
         backup_local_para_nuvem()
         return f"🏭 **Entendido! Criei a montadora {nome_m} e já sincronizei com a Nuvem!** \n\n🎨 Para a logo, basta colocar um arquivo `{nome_m}.png` na pasta local `Logos/`."
 
-    # 2. INTENÇÃO: Aprender / Memória
+    # 7. INTENÇÃO: Aprender / Memória
     if "/aprender" in msg:
         corpo = prompt_cru.split("/aprender", 1)[1].strip()
         if ":" in corpo:
@@ -327,45 +401,47 @@ def processar_linguagem_chip(prompt_cru):
         cursor.execute("SELECT chave FROM chip_memoria")
         chaves = [c[0].upper() for c in cursor.fetchall()]
         conn.close()
-        if chaves: return "🧠 **Termos que eu absorvi da sua experiência:**\n\n" + "\n".join([f"* {c}" for c in chaves])
+        if chaves: return "🧠 **Termos que eu absorvi:**\n\n" + "\n".join([f"* {c}" for c in chaves])
         return "Minha memória de termos está em branco. Me ensine algo usando `/aprender termo: explicacao`!"
 
-    # 3. INTENÇÃO: Busca em Memória (Verifica se o usuário citou algo que ele aprendeu)
+    # 8. INTENÇÃO: Busca em Memória
     memoria_receptiva = buscar_memoria_chip(prompt_cru)
     if memoria_receptiva: return memoria_receptiva
 
-    # 4. INTENÇÃO: Status e Sincronização
+    # 9. INTENÇÃO: Status e Sincronização
     if any(s in msg for s in ["status", "quantos", "estatistica", "resumo"]):
         conn = conectar_db()
         c = conn.cursor()
         c.execute("SELECT COUNT(*) FROM montadoras"); q_m = c.fetchone()[0]
         c.execute("SELECT COUNT(*) FROM veiculos"); q_v = c.fetchone()[0]
         conn.close()
-        return f"📊 **Estatísticas Atuais:** Temos **{q_m} montadoras** e **{q_v} modelos** processados no banco de dados."
+        return f"📊 **Estatísticas Atuais:** Temos **{q_m} montadoras** e **{q_v} modelos** gravados no banco de dados."
 
     if any(s in msg for s in ["sincronizar", "recuperar pastas", "sync"]):
         qtd = sincronizar_banco_com_pastas()
-        return f"🔄 **Manutenção Concluída:** Diagnostiquei a árvore de arquivos e reconstruí **{qtd} pastas** físicas ausentes."
+        return f"🔄 **Manutenção Concluída:** Diagnostiquei a árvore e reconstruí **{qtd} pastas** físicas locais ausentes."
 
     if any(b in msg for b in ["backup", "salvar", "nuvem"]):
-        return f"🛡️ **Proteção Ativa:** Eu realizo o backup automático no Dataset `HyperTork_DB` da Nuvem toda vez que um salvamento, exclusão ou aprendizado ocorre!"
+        return f"🛡️ **Proteção Ativa:** Meu backup automático no Dataset `HyperTork_DB` está online e protegendo tudo!"
 
-    # 5. INTENÇÃO: Ajuda
+    # 10. INTENÇÃO: Ajuda
     if any(a in msg for a in ["ajuda", "comandos", "o que voce faz", "help"]):
         return (
-            "🤖 **Sou o Chip e minha linguagem foi aprimorada!**\n\n"
-            "Você pode me dar instruções naturais como:\n"
-            "* *'Chip, crie a montadora Honda'* -> Eu analiso a frase e crio a marca.\n"
-            "* *'Quantos carros temos?'* -> Eu trago o status do banco.\n"
-            "* *'Me ajuda a fazer o backup'* -> Explico nossa segurança.\n\n"
-            "Ou usar os comandos diretos: `/status`, `/sync`, `/memoria`, `/limpar`."
+            "🤖 **Sou o Chip e recebi poderes Administrativos!**\n\n"
+            "Escreva para mim usando estes padrões para eu operar o sistema:\n"
+            "* `Crie a montadora [MARCA]`\n"
+            "* `Renomear montadora [ANTIGA] para [NOVA]`\n"
+            "* `Cadastrar veiculo [CARRO] na montadora [MARCA]`\n"
+            "* `Excluir veiculo [CARRO] da montadora [MARCA]`\n"
+            "* `Excluir montadora [MARCA]`\n\n"
+            "Lembrando que para subir fotos, você ainda precisa usar a aba 'Gerenciar' ao lado!"
         )
 
-    # 6. INTENÇÃO: Cumprimentos
+    # 11. INTENÇÃO: Cumprimentos
     if any(c == msg for c in ["oi", "ola", "bom dia", "boa tarde", "boa noite", "e ai", "chip"]):
-        return "🤖 Olá! Processamento de Linguagem Natural online. Pode falar comigo de forma orgânica, estou escutando!"
+        return "🤖 Olá! Processamento de Linguagem Natural online. Qual instrução de banco de dados quer que eu execute hoje?"
         
-    return "🤔 Poxa, processei a sua frase mas não identifiquei uma instrução clara. Digite **ajuda** para ver o que eu sei fazer, ou me ensine esse termo usando `/aprender`!"
+    return "🤔 Recebi seu comando, mas não identifiquei a estrutura. Digite **ajuda** para ver o formato que eu consigo ler para cadastrar/editar tabelas!"
 
 # --- 🖼️ MODAL DE ZOOM EXPANDIDO EM TELA CHEIA ---
 @st.dialog("🔍 Visualizador de Mapa Ampliado", width="large")
@@ -396,13 +472,13 @@ if st.sidebar.button("🏠 Voltar para Tela Inicial", use_container_width=True):
     st.rerun()
 
 st.sidebar.markdown("---")
-st.sidebar.markdown("🤖 **Chip - Inteligência NLP**")
+st.sidebar.markdown("🤖 **Chip - Assistente Operacional**")
 
 for mensagem in st.session_state.chat_historico:
     with st.sidebar.chat_message(mensagem["role"]):
         st.markdown(mensagem["content"])
 
-if prompt := st.sidebar.chat_input("Fale com o Chip de forma natural..."):
+if prompt := st.sidebar.chat_input("Dê um comando para o Chip..."):
     st.session_state.chat_historico.append({"role": "user", "content": prompt})
     if prompt.strip().lower() in ["/limpar", "limpar chat", "limpar"]:
         st.session_state.chat_historico = [{"role": "assistant", "content": "Visão limpa! Qual é o próximo comando?"}]
@@ -422,7 +498,7 @@ if st.session_state.montadora_selecionada == "":
     st.write("")
 
     if not montadoras_existentes:
-        st.info("Nenhuma montadora cadastrada. Use a área administrativa ou converse com o Chip para criar uma!")
+        st.info("Nenhuma montadora cadastrada. Use a área administrativa ou peça para o Chip 'criar a montadora'!")
     else:
         cols = st.columns(4)
         for i, m in enumerate(montadoras_existentes):
