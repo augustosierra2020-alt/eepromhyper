@@ -1,11 +1,13 @@
-import streamlit as st  # CORRIGIDO: Adicionado o 'as' que faltava
+import streamlit as st
 import os
 import json
 import base64
+import sqlite3  # Biblioteca nativa do Python para Banco de Dados
 from PIL import Image
 
 # --- ANCORAGEM DEFINITIVA DA BIBLIOTECA 'Graficoseeprom' ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DB_PATH = os.path.join(BASE_DIR, "eeprom_master.db")
 
 def mapear_pasta_logos(base):
     for d in os.listdir(base):
@@ -20,34 +22,175 @@ if not os.path.exists(LOGOS_DIR):
 
 st.set_page_config(page_title="EEPROM Master System", layout="wide")
 
+# --- INICIALIZAÇÃO DO BANCO DE DADOS ---
+def conectar_db():
+    return sqlite3.connect(DB_PATH)
+
+def init_db():
+    """Cria a estrutura de tabelas relacionais do banco de dados se não existirem."""
+    conn = conectar_db()
+    cursor = conn.cursor()
+    
+    # Tabela de Montadoras
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS montadoras (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            nome TEXT UNIQUE NOT NULL
+        )
+    """)
+    
+    # Tabela de Veículos (Contendo as novas diretrizes de Configuração de Mapa)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS veiculos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            montadora_nome TEXT NOT NULL,
+            modelo TEXT NOT NULL,
+            posicao_inicio TEXT,
+            intervalo TEXT,
+            valores_invertidos TEXT,
+            escala TEXT,
+            detalhes TEXT,
+            UNIQUE(montadora_nome, modelo)
+        )
+    """)
+    
+    # Tabela de Gráficos (Guarda até 6 imagens diretamente como BLOB/Binário)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS graficos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            veiculo_id INTEGER NOT NULL,
+            foto BLOB NOT NULL,
+            ordem INTEGER NOT NULL,
+            FOREIGN KEY (veiculo_id) REFERENCES veiculos(id) ON DELETE CASCADE
+        )
+    """)
+    conn.commit()
+    conn.close()
+
+# Executa a ativação do banco de dados na inicialização
+init_db()
+
 # --- ESTADO DE NAVEGAÇÃO ---
 if 'montadora_selecionada' not in st.session_state:
     st.session_state.montadora_selecionada = ""
 
-# --- FUNÇÕES DE GERENCIAMENTO ---
+# --- FUNÇÕES DE GERENCIAMENTO DA BIBLIOTECA (HÍBRIDA: DB + PASTAS) ---
 
 def listar_montadoras():
+    """Lista montadoras unificando pastas físicas (antigas) e registros do Banco de Dados."""
     ignorar = ['.git', '.streamlit', '__pycache__', 'dados_eeprom', 'logos', 'logo', 'Logos', 'LOGO']
-    montadoras = []
+    montadoras = set()
+    
+    # 1. Varredura do sistema legado de arquivos
     if os.path.exists(BASE_DIR):
         for d in os.listdir(BASE_DIR):
             caminho_completo = os.path.join(BASE_DIR, d)
             if os.path.isdir(caminho_completo) and d not in ignorar:
-                montadoras.append(d)
-    return sorted(montadoras)
+                montadoras.add(d.upper())
+                
+    # 2. Varredura do Banco de Dados
+    try:
+        conn = conectar_db()
+        cursor = conn.cursor()
+        cursor.execute("SELECT nome FROM montadoras")
+        for row in cursor.fetchall():
+            montadoras.add(row[0].upper())
+        conn.close()
+    except:
+        pass
+        
+    return sorted(list(montadoras))
 
 def listar_modelos(montadora):
+    """Lista os modelos buscando tanto em pastas físicas quanto no Banco de Dados."""
     if not montadora: return []
-    path = os.path.join(BASE_DIR, montadora)
+    modelos = set()
+    
+    # 1. Busca na pasta física legada
+    path = os.path.join(BASE_DIR, montadora.upper())
     if os.path.exists(path):
-        return sorted([d for d in os.listdir(path) if os.path.isdir(os.path.join(path, d))])
-    return []
+        for d in os.listdir(path):
+            if os.path.isdir(os.path.join(path, d)):
+                modelos.add(d)
+                
+    # 2. Busca no Banco de Dados
+    try:
+        conn = conectar_db()
+        cursor = conn.cursor()
+        cursor.execute("SELECT modelo FROM veiculos WHERE montadora_nome = ?", (montadora.upper(),))
+        for row in cursor.fetchall():
+            modelos.add(row[0])
+        conn.close()
+    except:
+        pass
+        
+    return sorted(list(modelos))
+
+def buscar_dados_veiculo_unificado(montadora, modelo):
+    """Busca os dados e os mapas no Banco de Dados com fallback para o sistema de arquivos."""
+    # 1. Tenta extrair do Banco de Dados
+    try:
+        conn = conectar_db()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT id, posicao_inicio, intervalo, valores_invertidos, escala, detalhes 
+            FROM veiculos WHERE montadora_nome = ? AND modelo = ?
+        """, (montadora.upper(), modelo))
+        row = cursor.fetchone()
+        
+        if row:
+            v_id = row[0]
+            cursor.execute("SELECT foto FROM graficos WHERE veiculo_id = ? ORDER BY ordem", (v_id,))
+            fotos = [f[0] for f in cursor.fetchall()]
+            conn.close()
+            return {
+                "posicao_inicio": row[1],
+                "intervalo": row[2],
+                "valores_invertidos": row[3],
+                "escala": row[4],
+                "detalhes": row[5],
+                "graficos": fotos
+            }
+        conn.close()
+    except:
+        pass
+        
+    # 2. Fallback: Se não achar no banco, lê as pastas físicas legadas (Garante retrocompatibilidade)
+    path_final = os.path.join(BASE_DIR, montadora.upper(), modelo)
+    json_path = os.path.join(path_final, "dados.json")
+    if os.path.exists(json_path):
+        try:
+            with open(json_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            
+            graficos = []
+            for i in range(1, 7):
+                p = os.path.join(path_final, f"grafico_{i}.png")
+                if os.path.exists(p):
+                    with open(p, "rb") as img_f:
+                        graficos.append(img_f.read())
+                        
+            p_legado = os.path.join(path_final, "grafico.png")
+            if os.path.exists(p_legado) and not graficos:
+                with open(p_legado, "rb") as img_f:
+                    graficos.append(img_f.read())
+                    
+            return {
+                "posicao_inicio": data.get("posicao_inicio", "Não informado"),
+                "intervalo": data.get("intervalo", "Não informado"),
+                "valores_invertidos": data.get("valores_invertidos", "Desativado"),
+                "escala": data.get("escala", "8 bits"),
+                "detalhes": data.get("detalhes", ""),
+                "graficos": graficos
+            }
+        except:
+            pass
+    return None
 
 def buscar_logo_montadora_automatica(montadora):
     if os.path.exists(LOGOS_DIR):
         arquivos = os.listdir(LOGOS_DIR)
         mont_alvo = montadora.strip().upper()
-        
         for arquivo in arquivos:
             arq_upper = arquivo.upper()
             if mont_alvo in arq_upper and arq_upper.endswith(('.PNG', '.WEBP')):
@@ -65,33 +208,45 @@ def obter_image_base64(caminho):
     except:
         return ""
 
-def salvar_novo_veiculo(montadora, modelo, inicio, intervalo, info_extra, valores_invertidos, escala, imagens_upload):
-    pasta_modelo = os.path.join(BASE_DIR, montadora.upper(), modelo.strip())
-    if not os.path.exists(pasta_modelo):
-        os.makedirs(pasta_modelo)
-    
-    dados = {
-        "posicao_inicio": inicio, 
-        "intervalo": intervalo, 
-        "detalhes": info_extra,
-        "valores_invertidos": valores_invertidos,
-        "escala": escala
-    }
-    with open(os.path.join(pasta_modelo, "dados.json"), "w", encoding="utf-8") as f:
-        json.dump(dados, f, indent=4, ensure_ascii=False)
-    
-    if imagens_upload:
-        for idx, img_file in enumerate(imagens_upload[:6]):
-            img = Image.open(img_file)
-            img.save(os.path.join(pasta_modelo, f"grafico_{idx+1}.png"))
+def salvar_novo_veiculo_no_db(montadora, modelo, inicio, intervalo, info_extra, valores_invertidos, escala, imagens_upload):
+    """Grava as informações organizadas diretamente dentro do arquivo único do Banco de Dados."""
+    conn = conectar_db()
+    cursor = conn.cursor()
+    try:
+        # Garante a montadora na tabela de indexação
+        cursor.execute("INSERT OR IGNORE INTO montadoras (nome) VALUES (?)", (montadora.upper(),))
+        
+        # Insere ou atualiza os dados técnicos do veículo
+        cursor.execute("""
+            INSERT OR REPLACE INTO veiculos 
+            (montadora_nome, modelo, posicao_inicio, intervalo, valores_invertidos, escala, detalhes)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (montadora.upper(), modelo.strip(), inicio, intervalo, valores_invertidos, escala, info_extra))
+        
+        cursor.execute("SELECT id FROM veiculos WHERE montadora_nome = ? AND modelo = ?", (montadora.upper(), modelo.strip()))
+        veiculo_id = cursor.fetchone()[0]
+        
+        # Limpa registros antigos de fotos para evitar acúmulo desnecessário
+        cursor.execute("DELETE FROM graficos WHERE veiculo_id = ?", (veiculo_id,))
+        
+        # Converte os uploads em arquivos BLOB binários guardados direto no banco
+        if imagens_upload:
+            for idx, img_file in enumerate(imagens_upload[:6]):
+                img_bytes = img_file.read()
+                cursor.execute("INSERT INTO graficos (veiculo_id, foto, ordem) VALUES (?, ?, ?)", (veiculo_id, img_bytes, idx+1))
+                
+        conn.commit()
         return True
-    return False
+    except Exception as e:
+        print(f"Erro no banco: {e}")
+        return False
+    finally:
+        conn.close()
 
-# --- 🎨 CONTROLE E ALINHAMENTO ESTRUTURAL DAS MOLDURAS (CSS) ---
+# --- 🎨 CONTROLE VISUAL DAS MOLDURAS (CSS) ---
 st.markdown("""
     <style>
     .block-container { padding-top: 2rem; }
-    
     div[data-testid="stVerticalBlockBorderWrapper"] {
         max-width: 200px !important;
         margin: 0 auto !important;
@@ -99,7 +254,6 @@ st.markdown("""
         border-radius: 12px !important;
         box-shadow: 0 4px 12px rgba(0,0,0,0.15) !important;
     }
-    
     div.stButton > button {
         margin-top: 4px !important;
         border-radius: 8px !important;
@@ -109,7 +263,7 @@ st.markdown("""
 
 # --- BARRA LATERAL ---
 st.sidebar.title("🛡️ EEPROM System")
-st.sidebar.info(f"📂 **Biblioteca Ativa:**\n`Graficoseeprom`")
+st.sidebar.info(f"📂 **Banco de Dados Ativo:**\n`eeprom_master.db`")
 
 if st.sidebar.button("🏠 Voltar para Tela Inicial", use_container_width=True):
     st.session_state.montadora_selecionada = ""
@@ -118,14 +272,14 @@ if st.sidebar.button("🏠 Voltar para Tela Inicial", use_container_width=True):
 st.sidebar.markdown("---")
 montadoras_existentes = listar_montadoras()
 
-# --- TELA INICIAL: DASHBOARD COM GRID ALINHADO ---
+# --- TELA INICIAL: DASHBOARD ---
 if st.session_state.montadora_selecionada == "":
     st.title("🚜 Painel de Controle - Baias EEPROM")
     st.markdown("### Escolha a Montadora desejada para abrir os modelos")
     st.write("")
 
     if not montadoras_existentes:
-        st.info("Nenhuma montadora cadastrada nas pastas. Use a área administrativa abaixo para iniciar sua biblioteca.")
+        st.info("Nenhuma montadora cadastrada. Use a área administrativa abaixo para iniciar seu Banco de Dados.")
     else:
         cols = st.columns(4)
         for i, m in enumerate(montadoras_existentes):
@@ -140,16 +294,12 @@ if st.session_state.montadora_selecionada == "":
                                 <div style="display: flex; justify-content: center; align-items: center; 
                                             background-color: #FFFFFF; padding: 10px; border-radius: 8px; 
                                             height: 110px; width: 100%; box-sizing: border-box; margin-bottom: 6px;">
-                                    <img src="data:image/png;base64,{logo_b64}" 
-                                         style="max-height: 90px; max-width: 100%; object-fit: contain;">
+                                    <img src="data:image/png;base64,{logo_b64}" style="max-height: 90px; max-width: 100%; object-fit: contain;">
                                 </div>
                             """, unsafe_allow_html=True)
-                        else:
-                            st.error("Erro")
                     else:
                         st.markdown(f"""
-                            <div style="display: flex; justify-content: center; align-items: center; 
-                                        height: 110px; width: 100%; margin-bottom: 6px;">
+                            <div style="display: flex; justify-content: center; align-items: center; height: 110px; width: 100%; margin-bottom: 6px;">
                                 <p style='text-align:center; font-weight:bold; color:#1E88E5; margin:0;'>🏭 {m}</p>
                             </div>
                         """, unsafe_allow_html=True)
@@ -158,7 +308,7 @@ if st.session_state.montadora_selecionada == "":
                         st.session_state.montadora_selecionada = m
                         st.rerun()
 
-# --- TELA INTERNA: EXIBE OS MODELOS DISPONÍVEIS IMEDIATAMENTE ---
+# --- TELA INTERNA: EXIBIÇÃO DE MODELOS ---
 else:
     col_logo, col_nome = st.columns([1, 8])
     caminho_da_logo = buscar_logo_montadora_automatica(st.session_state.montadora_selecionada)
@@ -169,13 +319,10 @@ else:
             if logo_b64_int:
                 st.markdown(f"""
                     <div style="display: flex; justify-content: center; align-items: center; 
-                                background-color: #FFFFFF; padding: 6px; border-radius: 8px; 
-                                height: 75px; width: 75px; box-sizing: border-box;">
+                                background-color: #FFFFFF; padding: 6px; border-radius: 8px; height: 75px; width: 75px; box-sizing: border-box;">
                         <img src="data:image/png;base64,{logo_b64_int}" style="max-height: 60px; max-width: 100%; object-fit: contain;">
                     </div>
                 """, unsafe_allow_html=True)
-            else:
-                st.subheader("🏭")
         else:
             st.subheader("🏭")
             
@@ -187,7 +334,7 @@ else:
     modelos_existentes = listar_modelos(st.session_state.montadora_selecionada)
     
     if not modelos_existentes:
-        st.warning(f"Nenhum veículo cadastrado para a montadora {st.session_state.montadora_selecionada}. Cadastre um modelo abaixo.")
+        st.warning(f"Nenhum veículo cadastrado para a montadora {st.session_state.montadora_selecionada}.")
     else:
         st.markdown("### 📂 Selecione o Veículo para carregar os gráficos imediatamente:")
         escolha_modelo = st.selectbox("", [""] + modelos_existentes, label_visibility="collapsed")
@@ -195,73 +342,55 @@ else:
         
         if escolha_modelo:
             st.markdown(f"#### 📍 Mapa: {st.session_state.montadora_selecionada} {escolha_modelo}")
-            path_final = os.path.join(BASE_DIR, st.session_state.montadora_selecionada, escolha_modelo)
             
-            graficos_encontrados = []
-            for i in range(1, 7):
-                p = os.path.join(path_final, f"grafico_{i}.png")
-                if os.path.exists(p):
-                    graficos_encontrados.append(p)
-            
-            p_legado = os.path.join(path_final, "grafico.png")
-            if os.path.exists(p_legado) and p_legado not in graficos_encontrados:
-                graficos_encontrados.append(p_legado)
+            dados_mapa = buscar_dados_veiculo_unificado(st.session_state.montadora_selecionada, escolha_modelo)
 
             col_img, col_info = st.columns([2, 1])
             
             with col_img:
-                if not graficos_encontrados:
-                    st.error("⚠️ Nenhuma imagem de mapa encontrada nesta pasta.")
+                if not dados_mapa or not dados_mapa["graficos"]:
+                    st.error("⚠️ Nenhuma imagem de mapa encontrada para este veículo.")
                 else:
-                    for idx in range(0, len(graficos_encontrados), 2):
+                    # Renderização em Grid Dinâmico de 2 colunas para até 6 imagens
+                    lista_fotos = dados_mapa["graficos"]
+                    for idx in range(0, len(lista_fotos), 2):
                         sub_cols = st.columns(2)
-                        
                         with sub_cols[0]:
-                            if idx < len(graficos_encontrados):
-                                nome_arq = os.path.basename(graficos_encontrados[idx])
-                                cap = "Gráfico de Referência" if nome_arq == "grafico.png" else f"Gráfico Principal ({idx+1})"
-                                st.image(graficos_encontrados[idx], use_container_width=True, caption=cap)
-                                
+                            if idx < len(lista_fotos):
+                                st.image(lista_fotos[idx], use_container_width=True, caption=f"Gráfico Principal ({idx+1})")
                         with sub_cols[1]:
-                            if idx + 1 < len(graficos_encontrados):
-                                st.image(graficos_encontrados[idx+1], use_container_width=True, caption=f"Gráfico Complementar ({idx+2})")
+                            if idx + 1 < len(lista_fotos):
+                                st.image(lista_fotos[idx+1], use_container_width=True, caption=f"Gráfico Complementar ({idx+2})")
                 
-                # Ficha técnica de Configuração de mapa abaixo dos gráficos
+                # Ficha técnica de Configuração de mapa abaixo das fotos
                 st.write("")
                 with st.container(border=True):
                     st.markdown("⚙️ **Configuração de Mapa**")
-                    json_path = os.path.join(path_final, "dados.json")
-                    if os.path.exists(json_path):
-                        with open(json_path, "r", encoding="utf-8") as f:
-                            cfg_data = json.load(f)
-                        
-                        v_inv_salvo = cfg_data.get("valores_invertidos", "Não informado")
+                    if dados_mapa:
+                        v_inv_salvo = dados_mapa.get("valores_invertidos", "Desativado")
                         if v_inv_salvo == "Não": v_inv_salvo = "Desativado"
                         elif v_inv_salvo == "Sim": v_inv_salvo = "Ativado"
                         
-                        escala_salva = cfg_data.get("escala", "Não informado")
+                        escala_salva = dados_mapa.get("escala", "8 bits")
                         
                         cm1, cm2 = st.columns(2)
                         cm1.write(f"**Valores invertidos:** {v_inv_salvo}")
                         cm2.write(f"**Escala:** {escala_salva}")
                     else:
-                        st.caption("Configurações técnicas estruturais não localizadas.")
+                        st.caption("Configurações não localizadas.")
                     
             with col_info:
                 with st.container(border=True):
                     st.subheader("📋 Informações Gerais")
-                    json_path = os.path.join(path_final, "dados.json")
-                    if os.path.exists(json_path):
-                        with open(json_path, "r", encoding="utf-8") as f:
-                            data = json.load(f)
+                    if dados_mapa:
                         st.write("**Início do Gráfico:**")
-                        st.code(data["posicao_inicio"], language="text")
+                        st.code(dados_mapa["posicao_inicio"], language="text")
                         st.write("**Intervalo de Endereços:**")
-                        st.code(data["intervalo"], language="text")
+                        st.code(dados_mapa["intervalo"], language="text")
                         st.write("**Detalhes do Veículo:**")
-                        st.info(data["detalhes"])
+                        st.info(dados_mapa["detalhes"])
                     else:
-                        st.warning("Arquivo dados.json ausente.")
+                        st.warning("Dados ausentes.")
 
 # --- SEÇÃO ADMINISTRATIVA ---
 st.markdown("<br><br>", unsafe_allow_html=True)
@@ -272,8 +401,12 @@ with st.expander("➕ ÁREA ADMINISTRATIVA: Adicionar Montadoras e Veículos"):
         nova_m = st.text_input("Nome da Montadora").upper().strip()
         if st.button("Criar Pasta"):
             if nova_m:
-                os.makedirs(os.path.join(BASE_DIR, nova_m), exist_ok=True)
-                st.success(f"Pasta '{nova_m}' criada com sucesso na biblioteca!"); st.rerun()
+                conn = conectar_db()
+                cursor = conn.cursor()
+                cursor.execute("INSERT OR IGNORE INTO montadoras (nome) VALUES (?)", (nova_m,))
+                conn.commit()
+                conn.close()
+                st.success(f"Montadora '{nova_m}' inserida com sucesso no Banco de Dados!"); st.rerun()
     with adm2:
         st.subheader("Novo Veículo")
         if montadoras_existentes:
@@ -291,5 +424,5 @@ with st.expander("➕ ÁREA ADMINISTRATIVA: Adicionar Montadoras e Veículos"):
             v_files = st.file_uploader("Fotos dos Gráficos (Máx 6)", type=["png", "jpg", "jpeg"], accept_multiple_files=True)
             if st.button("Salvar Tudo"):
                 if v_adm and v_files:
-                    salvar_novo_veiculo(m_adm, v_adm, v_ini, v_int, v_det, v_inv_input, v_escala_input, v_files)
-                    st.success("Veículo guardado na pasta com sucesso!"); st.rerun()
+                    salvar_novo_veiculo_no_db(m_adm, v_adm, v_ini, v_int, v_det, v_inv_input, v_escala_input, v_files)
+                    st.success("Veículo guardado no Banco de Dados com sucesso!"); st.rerun()
