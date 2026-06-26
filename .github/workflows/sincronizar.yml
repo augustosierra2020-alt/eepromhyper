@@ -16,4 +16,4 @@ jobs:
       - name: Enviar para o Hugging Face
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
-        run: git push --force https://sergioaugusto:$HF_TOKEN@huggingface.co/spaces/grizzlybear25-hypertork.hf.space
+        run: git push --force https://sergioaugusto:$HF_TOKEN@huggingface.co/spaces/GrizzlyBear25/HyperTork_
