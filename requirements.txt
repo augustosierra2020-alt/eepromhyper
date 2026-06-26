@@ -2,3 +2,4 @@ rembg
 streamlit
 Pillow
 python-docx
+huggingface_hub

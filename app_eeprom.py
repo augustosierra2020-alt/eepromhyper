@@ -5,6 +5,7 @@ import base64
 import sqlite3
 import re
 import shutil
+import unicodedata
 from PIL import Image
 from huggingface_hub import HfApi, hf_hub_download
 
@@ -12,24 +13,21 @@ from huggingface_hub import HfApi, hf_hub_download
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.path.join(BASE_DIR, "eeprom_master.db")
 
-# Configuração do Cofre Hugging Face
 HF_TOKEN = os.environ.get("HF_TOKEN")
-DATASET_REPO_ID = "GrizzlyBear25/HyperTork_DB" # <--- Se você usou outro nome no Passo 1, mude aqui
+DATASET_REPO_ID = "GrizzlyBear25/HyperTork_DB" 
 
 # --- IA GESTORA DA BIBLIOTECA DA NUVEM ---
 def sincronizar_nuvem_para_local():
-    """Baixa o banco de dados mais recente do Dataset na nuvem ao iniciar o app"""
     if HF_TOKEN:
         try:
             db_nuvem = hf_hub_download(repo_id=DATASET_REPO_ID, filename="eeprom_master.db", repo_type="dataset", token=HF_TOKEN)
             shutil.copy(db_nuvem, DB_PATH)
             return True
-        except Exception as e:
-            print("Nenhum banco encontrado na nuvem ou erro de acesso. Usando local.")
+        except Exception:
+            pass
     return False
 
 def backup_local_para_nuvem():
-    """Faz o upload imediato do banco de dados para o Dataset na nuvem"""
     if HF_TOKEN and os.path.exists(DB_PATH):
         try:
             api = HfApi()
@@ -41,11 +39,10 @@ def backup_local_para_nuvem():
                 token=HF_TOKEN
             )
             return True
-        except Exception as e:
-            print(f"Erro no backup em nuvem: {e}")
+        except Exception:
+            pass
     return False
 
-# Roda a sincronização inicial IMEDIATAMENTE antes de ler o banco
 sincronizar_nuvem_para_local()
 
 def higienizar_nome(nome):
@@ -124,7 +121,7 @@ init_db()
 if 'montadora_selecionada' not in st.session_state:
     st.session_state.montadora_selecionada = ""
 if 'chat_historico' not in st.session_state:
-    st.session_state.chat_historico = [{"role": "assistant", "content": "Olá! Eu sou o **Chip**. Agora estou conectado ao Cofre da Nuvem! Pode cadastrar à vontade."}]
+    st.session_state.chat_historico = [{"role": "assistant", "content": "Olá! Eu sou o **Chip**. Fui atualizado com um processador de linguagem natural. Pode falar comigo de forma bem humana!"}]
 
 # --- FUNÇÕES DE GERENCIAMENTO ---
 def listar_montadoras():
@@ -225,7 +222,7 @@ def salvar_novo_veiculo_hibrido(montadora, modelo, inicio, intervalo, info_extra
                 with open(os.path.join(pasta_modelo, f"grafico_{idx+1}.png"), "wb") as f_img:
                     f_img.write(img_bytes)
         conn.commit()
-        backup_local_para_nuvem() # CHIP FAZ O BACKUP NA NUVEM AQUI!
+        backup_local_para_nuvem() 
         return True
     except: return False
     finally: conn.close()
@@ -240,7 +237,7 @@ def excluir_veiculo_db(montadora, modelo):
     conn.close()
     pasta_modelo = os.path.join(BASE_DIR, mont, mod)
     if os.path.exists(pasta_modelo): shutil.rmtree(pasta_modelo)
-    backup_local_para_nuvem() # CHIP FAZ O BACKUP NA NUVEM AQUI!
+    backup_local_para_nuvem() 
 
 def excluir_montadora_db(montadora):
     mont = higienizar_nome(montadora)
@@ -252,106 +249,123 @@ def excluir_montadora_db(montadora):
     conn.close()
     pasta_montadora = os.path.join(BASE_DIR, mont)
     if os.path.exists(pasta_montadora): shutil.rmtree(pasta_montadora)
-    backup_local_para_nuvem() # CHIP FAZ O BACKUP NA NUVEM AQUI!
+    backup_local_para_nuvem() 
 
-# --- 🧠 LÓGICA DE APRENDIZADO E ADMINISTRAÇÃO DO CHIP ---
+# --- 🧠 LÓGICA DE APRENDIZADO E NLP DO CHIP ---
+def normalizar_texto(texto):
+    """Remove acentos, caracteres especiais básicos e padroniza para minúsculo"""
+    texto = unicodedata.normalize('NFKD', texto).encode('ASCII', 'ignore').decode('utf-8')
+    return texto.lower().strip()
+
 def salvar_memoria_chip(chave, valor):
-    ch = chave.strip().lower()
+    ch = normalizar_texto(chave)
     conn = conectar_db()
     cursor = conn.cursor()
     cursor.execute("INSERT OR REPLACE INTO chip_memoria (chave, valor) VALUES (?, ?)", (ch, valor.strip()))
     conn.commit()
     conn.close()
-    backup_local_para_nuvem() # Backup também ao aprender coisas novas
+    backup_local_para_nuvem()
 
 def buscar_memoria_chip(texto):
-    tx = texto.strip().lower()
+    tx = normalizar_texto(texto)
     conn = conectar_db()
     cursor = conn.cursor()
     cursor.execute("SELECT chave, valor FROM chip_memoria")
     linhas = cursor.fetchall()
     conn.close()
     for chave, valor in linhas:
-        if chave in tx: return f"🧠 **O que eu lembro sobre '{chave.upper()}':**\n\n{valor}"
+        # Busca difusa (fuzzy search simplificada)
+        if chave in tx or tx in chave: 
+            return f"🧠 **O que eu lembro sobre '{chave.upper()}':**\n\n{valor}"
     return None
 
 def processar_linguagem_chip(prompt_cru):
-    msg = prompt_cru.strip().lower()
+    msg = normalizar_texto(prompt_cru)
     
-    if msg.startswith("/montadora ") or (any(x in msg for x in ["criar", "cadastrar", "adicione", "nova"]) and "montadora" in msg):
-        if msg.startswith("/montadora "): nome_m = prompt_cru.split("/montadora ", 1)[1].strip()
+    # 1. INTENÇÃO: Criar Montadora
+    padroes_criar = ["cria a montadora", "crie a montadora", "criar montadora", "adicione a montadora", "nova montadora", "/montadora"]
+    if any(p in msg for p in padroes_criar):
+        nome_m = ""
+        if "/montadora" in msg:
+            nome_m = prompt_cru.split("/montadora", 1)[1].strip()
         else:
-            partes = prompt_cru.lower().split("montadora")
-            nome_m = partes[1].replace("chamada", "").replace("a ", "").replace("uma ", "").replace("o nome", "").strip()
+            # Tenta extrair o que vem depois da palavra "montadora"
+            partes = msg.split("montadora")
+            if len(partes) > 1:
+                nome_m = partes[1].replace("chamada", "").replace("a ", "").replace("uma ", "").replace("o nome", "").strip()
 
         nome_m = higienizar_nome(nome_m)
-        if not nome_m: return "Me diga qual é o nome da montadora! Ex: `/montadora FIAT`"
+        if not nome_m: 
+            return "Entendi que quer criar uma montadora, mas faltou me dizer o nome! Exemplo: `Crie a montadora FIAT`"
 
         conn = conectar_db()
         cursor = conn.cursor()
         cursor.execute("SELECT nome FROM montadoras WHERE nome = ?", (nome_m,))
         if cursor.fetchone():
             conn.close()
-            return f"⚠️ Ops! A montadora **{nome_m}** já existe."
+            return f"⚠️ Ops! A montadora **{nome_m}** já existe e está segura na nuvem!"
 
         cursor.execute("INSERT INTO montadoras (nome) VALUES (?)", (nome_m,))
         conn.commit()
         conn.close()
         os.makedirs(os.path.join(BASE_DIR, nome_m), exist_ok=True)
-        
-        backup_local_para_nuvem() # CHIP SALVA NA NUVEM!
-        return f"🏭 **Pronto! Criei e salvei a montadora {nome_m} na nuvem!** \n\n🎨 Para a logo, coloque um arquivo `{nome_m}.png` na pasta `Logos/`."
+        backup_local_para_nuvem()
+        return f"🏭 **Entendido! Criei a montadora {nome_m} e já sincronizei com a Nuvem!** \n\n🎨 Para a logo, basta colocar um arquivo `{nome_m}.png` na pasta local `Logos/`."
 
-    if msg.startswith("/aprender"):
-        corpo = prompt_cru[9:].strip()
+    # 2. INTENÇÃO: Aprender / Memória
+    if "/aprender" in msg:
+        corpo = prompt_cru.split("/aprender", 1)[1].strip()
         if ":" in corpo:
             chave, valor = corpo.split(":", 1)
             salvar_memoria_chip(chave, valor)
-            return f"✅ Entendido! Guardei na minha memória de silício e mandei pro Cofre!"
+            return f"✅ Entendido! Fixei **'{chave.strip().upper()}'** na minha memória permanente."
         return "⚠️ Formato incorreto. Use: `/aprender termo: significado`"
         
-    if msg == "/memoria":
+    if "memoria" in msg or "o que voce aprendeu" in msg:
         conn = conectar_db()
         cursor = conn.cursor()
         cursor.execute("SELECT chave FROM chip_memoria")
         chaves = [c[0].upper() for c in cursor.fetchall()]
         conn.close()
-        if chaves: return "🧠 **Termos que eu aprendi até agora:**\n\n" + "\n".join([f"* {c}" for c in chaves])
-        return "Me ensine algo usando `/aprender termo: explicacao`!"
+        if chaves: return "🧠 **Termos que eu absorvi da sua experiência:**\n\n" + "\n".join([f"* {c}" for c in chaves])
+        return "Minha memória de termos está em branco. Me ensine algo usando `/aprender termo: explicacao`!"
 
+    # 3. INTENÇÃO: Busca em Memória (Verifica se o usuário citou algo que ele aprendeu)
     memoria_receptiva = buscar_memoria_chip(prompt_cru)
     if memoria_receptiva: return memoria_receptiva
 
-    if msg == "/status" or any(s in msg for s in ["status", "quantos", "biblioteca"]):
+    # 4. INTENÇÃO: Status e Sincronização
+    if any(s in msg for s in ["status", "quantos", "estatistica", "resumo"]):
         conn = conectar_db()
         c = conn.cursor()
         c.execute("SELECT COUNT(*) FROM montadoras"); q_m = c.fetchone()[0]
         c.execute("SELECT COUNT(*) FROM veiculos"); q_v = c.fetchone()[0]
         conn.close()
-        return f"📊 **Status:** Temos **{q_m} montadoras** e **{q_v} modelos** gravados no banco de dados."
+        return f"📊 **Estatísticas Atuais:** Temos **{q_m} montadoras** e **{q_v} modelos** processados no banco de dados."
 
-    elif msg == "/sync":
+    if any(s in msg for s in ["sincronizar", "recuperar pastas", "sync"]):
         qtd = sincronizar_banco_com_pastas()
-        return f"🔄 **Ação Efetuada:** Reconstruí com sucesso **{qtd} pastas** físicas locais a partir do banco!"
+        return f"🔄 **Manutenção Concluída:** Diagnostiquei a árvore de arquivos e reconstruí **{qtd} pastas** físicas ausentes."
 
-    elif msg == "/backup":
-        return f"🛡️ **Status de Backup:** Agora eu faço backup automático direto no Dataset `HyperTork_DB` toda vez que você altera algo!"
+    if any(b in msg for b in ["backup", "salvar", "nuvem"]):
+        return f"🛡️ **Proteção Ativa:** Eu realizo o backup automático no Dataset `HyperTork_DB` da Nuvem toda vez que um salvamento, exclusão ou aprendizado ocorre!"
 
-    elif msg == "/ajuda":
+    # 5. INTENÇÃO: Ajuda
+    if any(a in msg for a in ["ajuda", "comandos", "o que voce faz", "help"]):
         return (
-            "🤖 **Guia do Chip:**\n\n"
-            "* `/montadora NOME` -> Crio uma montadora.\n"
-            "* `/status` -> Exibe estatísticas.\n"
-            "* `/sync` -> Regenera pastas físicas.\n"
-            "* `/memoria` -> Lista ensinamentos.\n"
-            "* `/limpar` -> Limpa o chat.\n"
-            "`/aprender Termo: Explicação`"
+            "🤖 **Sou o Chip e minha linguagem foi aprimorada!**\n\n"
+            "Você pode me dar instruções naturais como:\n"
+            "* *'Chip, crie a montadora Honda'* -> Eu analiso a frase e crio a marca.\n"
+            "* *'Quantos carros temos?'* -> Eu trago o status do banco.\n"
+            "* *'Me ajuda a fazer o backup'* -> Explico nossa segurança.\n\n"
+            "Ou usar os comandos diretos: `/status`, `/sync`, `/memoria`, `/limpar`."
         )
 
-    elif any(c in msg for c in ["oi", "olá", "bom dia", "boa tarde"]):
-        return "🤖 Olá! Sou o **Chip**. Meu sistema de persistência em Nuvem está 100% online!"
-    else:
-        return "🤔 Não entendi. Digite **/ajuda** para ver os comandos."
+    # 6. INTENÇÃO: Cumprimentos
+    if any(c == msg for c in ["oi", "ola", "bom dia", "boa tarde", "boa noite", "e ai", "chip"]):
+        return "🤖 Olá! Processamento de Linguagem Natural online. Pode falar comigo de forma orgânica, estou escutando!"
+        
+    return "🤔 Poxa, processei a sua frase mas não identifiquei uma instrução clara. Digite **ajuda** para ver o que eu sei fazer, ou me ensine esse termo usando `/aprender`!"
 
 # --- 🖼️ MODAL DE ZOOM EXPANDIDO EM TELA CHEIA ---
 @st.dialog("🔍 Visualizador de Mapa Ampliado", width="large")
@@ -382,16 +396,16 @@ if st.sidebar.button("🏠 Voltar para Tela Inicial", use_container_width=True):
     st.rerun()
 
 st.sidebar.markdown("---")
-st.sidebar.markdown("🤖 **Chip - Inteligência Ativa**")
+st.sidebar.markdown("🤖 **Chip - Inteligência NLP**")
 
 for mensagem in st.session_state.chat_historico:
     with st.sidebar.chat_message(mensagem["role"]):
         st.markdown(mensagem["content"])
 
-if prompt := st.sidebar.chat_input("Fale com o Chip..."):
+if prompt := st.sidebar.chat_input("Fale com o Chip de forma natural..."):
     st.session_state.chat_historico.append({"role": "user", "content": prompt})
-    if prompt.strip().lower() == "/limpar":
-        st.session_state.chat_historico = [{"role": "assistant", "content": "Histórico redefinido!"}]
+    if prompt.strip().lower() in ["/limpar", "limpar chat", "limpar"]:
+        st.session_state.chat_historico = [{"role": "assistant", "content": "Visão limpa! Qual é o próximo comando?"}]
         st.rerun()
     else:
         resposta = processar_linguagem_chip(prompt)
@@ -408,7 +422,7 @@ if st.session_state.montadora_selecionada == "":
     st.write("")
 
     if not montadoras_existentes:
-        st.info("Nenhuma montadora cadastrada. Use a área administrativa ou peça ao Chip para criar uma!")
+        st.info("Nenhuma montadora cadastrada. Use a área administrativa ou converse com o Chip para criar uma!")
     else:
         cols = st.columns(4)
         for i, m in enumerate(montadoras_existentes):
@@ -475,6 +489,8 @@ else:
                 if not dados_mapa or not dados_mapa["graficos"]:
                     st.error("⚠️ Nenhuma imagem de mapa encontrada para este veículo.")
                 else:
+                    st.caption("💡 *Dica:* Clique em 'Expandir e Dar Zoom' abaixo das fotos para abrir o Visualizador em Tela Cheia!")
+                    
                     lista_fotos = dados_mapa["graficos"]
                     for idx in range(0, len(lista_fotos), 2):
                         sub_cols = st.columns(2)
@@ -510,7 +526,7 @@ else:
                         st.write("**Detalhes do Veículo:**")
                         st.info(dados_mapa["detalhes"])
 
-# --- SEÇÃO ADMINISTRATIVA INDEPENDENTE COM NOTIFICAÇÕES SEVERAS ---
+# --- SEÇÃO ADMINISTRATIVA INDEPENDENTE ---
 st.markdown("<br><br>", unsafe_allow_html=True)
 
 with st.expander("➕ CADASTRAR: Adicionar Estruturas Independentes"):
@@ -532,7 +548,7 @@ with st.expander("➕ CADASTRAR: Adicionar Estruturas Independentes"):
                     cursor.execute("INSERT INTO montadoras (nome) VALUES (?)", (m_hig,))
                     conn.commit(); conn.close()
                     os.makedirs(os.path.join(BASE_DIR, m_hig), exist_ok=True)
-                    backup_local_para_nuvem() # Backup na criação manual
+                    backup_local_para_nuvem()
                     st.success(f"✅ Sucesso Absoluto: Montadora '{m_hig}' foi salva no Dataset em Nuvem!")
                     st.rerun()
                     
@@ -596,7 +612,7 @@ with st.expander("⚙️ GERENCIAR: Painel de Edição e Exclusão Total"):
                     new_path = os.path.join(BASE_DIR, n_m_hig)
                     if os.path.exists(old_path): os.rename(old_path, new_path)
                     
-                    backup_local_para_nuvem() # Backup após edição
+                    backup_local_para_nuvem()
                     st.success("✅ Sucesso: Nome da marca atualizado globalmente e na Nuvem!")
                     st.session_state.montadora_selecionada = ""
                     st.rerun()
