@@ -49,17 +49,15 @@ def higienizar_nome(nome):
     return re.sub(r'[\\/*?:"<>|]', "", nome_limpo)
 
 def sincronizar_banco_com_pastas():
-    """Recria TUDO a partir do BD, incluindo montadoras vazias"""
+    """Recria TUDO a partir do BD, blindando os dados recém baixados da nuvem"""
     conn = conectar_db()
     cursor = conn.cursor()
     
-    # 1. Garante que todas as pastas de montadoras existam (mesmo vazias)
     cursor.execute("SELECT nome FROM montadoras")
     montadoras = cursor.fetchall()
     for m in montadoras:
         os.makedirs(os.path.join(BASE_DIR, m[0]), exist_ok=True)
     
-    # 2. Recria os veículos, JSONs e Fotos
     cursor.execute("SELECT montadora_nome, modelo, posicao_inicio, intervalo, valores_invertidos, escala, detalhes, id FROM veiculos")
     veiculos = cursor.fetchall()
     
@@ -83,7 +81,7 @@ def sincronizar_banco_com_pastas():
     conn.close()
     return pastas_criadas
 
-# --- SETUP INICIAL (ORDEM CORRIGIDA) ---
+# --- SETUP INICIAL ---
 def conectar_db():
     conn = sqlite3.connect(DB_PATH)
     conn.execute("PRAGMA foreign_keys = ON;")
@@ -110,7 +108,7 @@ def init_db():
     conn.commit()
     conn.close()
 
-# Executa a rotina de boot: Baixa da nuvem -> Inicia DB -> Reconstrói pastas faltantes
+# Ordem de Boot Invencível: Nuvem -> Banco -> Pastas
 sincronizar_nuvem_para_local()
 init_db()
 sincronizar_banco_com_pastas()
@@ -131,7 +129,7 @@ st.set_page_config(page_title="HyperTork EEPROM System", layout="wide")
 if 'montadora_selecionada' not in st.session_state:
     st.session_state.montadora_selecionada = ""
 if 'chat_historico' not in st.session_state:
-    st.session_state.chat_historico = [{"role": "assistant", "content": "Olá! Eu sou o **Chip**. Ajustei meus engrenagens! Agora eu recrio qualquer pasta vazia que o servidor tentar apagar."}]
+    st.session_state.chat_historico = [{"role": "assistant", "content": "Olá! Eu sou o **Chip**. Minha compreensão natural foi expandida! Pode falar comigo do seu jeito para cadastrar marcas e veículos."}]
 
 # --- FUNÇÕES DE GERENCIAMENTO ---
 def listar_montadoras():
@@ -261,7 +259,7 @@ def excluir_montadora_db(montadora):
     if os.path.exists(pasta_montadora): shutil.rmtree(pasta_montadora)
     backup_local_para_nuvem() 
 
-# --- 🧠 LÓGICA DE APRENDIZADO E NLP DO CHIP ---
+# --- 🧠 LÓGICA DE APRENDIZADO E NLP AVANÇADO DO CHIP ---
 def normalizar_texto(texto):
     texto = unicodedata.normalize('NFKD', texto).encode('ASCII', 'ignore').decode('utf-8')
     return texto.lower().strip()
@@ -289,109 +287,97 @@ def buscar_memoria_chip(texto):
 
 def processar_linguagem_chip(prompt_cru):
     msg = normalizar_texto(prompt_cru)
+    # Remove a palavra "chip" para não sujar a leitura estrutural da IA
+    msg = re.sub(r'^chip[,]?\s*', '', msg)
     
-    if "renomear montadora" in msg:
-        try:
-            partes = msg.split("renomear montadora ")[1].split(" para ")
-            antiga = higienizar_nome(partes[0])
-            nova = higienizar_nome(partes[1])
-            
-            conn = conectar_db()
-            cursor = conn.cursor()
-            cursor.execute("SELECT nome FROM montadoras WHERE nome = ?", (antiga,))
-            if not cursor.fetchone():
-                conn.close()
-                return f"⚠️ Não encontrei a montadora '{antiga}' para renomear."
-                
-            cursor.execute("UPDATE montadoras SET nome = ? WHERE nome = ?", (nova, antiga))
-            cursor.execute("UPDATE veiculos SET montadora_nome = ? WHERE montadora_nome = ?", (nova, antiga))
-            conn.commit(); conn.close()
-            
-            old_path = os.path.join(BASE_DIR, antiga)
-            new_path = os.path.join(BASE_DIR, nova)
-            if os.path.exists(old_path): os.rename(old_path, new_path)
-            
-            backup_local_para_nuvem()
-            return f"🔄 **Operação Feita!** A montadora `{antiga}` agora se chama `{nova}` em todo o sistema e na Nuvem!"
-        except:
-            return "⚠️ Para eu entender, use exatamente o formato: `Chip, renomear montadora [NOME ANTIGO] para [NOME NOVO]`"
-
-    if "cadastrar veiculo" in msg or "criar veiculo" in msg:
-        try:
-            txt = msg.replace("criar veiculo", "cadastrar veiculo")
-            partes = txt.split("cadastrar veiculo ")[1].split(" na montadora ")
-            mod = higienizar_nome(partes[0])
-            mont = higienizar_nome(partes[1])
-            
-            conn = conectar_db()
-            cursor = conn.cursor()
-            cursor.execute("SELECT nome FROM montadoras WHERE nome = ?", (mont,))
-            if not cursor.fetchone():
-                conn.close()
-                return f"⚠️ A montadora '{mont}' não existe. Peça para eu criá-la primeiro!"
-            conn.close()
-            
-            salvar_novo_veiculo_hibrido(mont, mod, "Não Definido", "Não Definido", "Criado pelo Chip via Chat", "Desativado", "8 bits", None)
-            return f"🚗 **Ficha Criada!** Adicionei o veículo `{mod}` na montadora `{mont}` e salvei no Cofre.\n\n💡 *Dica:* Como sou um bot de texto, vá até a aba **⚙️ GERENCIAR** depois para inserir os Hexadecimais reais e fazer o upload das fotos!"
-        except:
-            return "⚠️ Para eu cadastrar o carro, use o formato: `Chip, cadastrar veiculo [CARRO] na montadora [MARCA]`"
-
-    if "excluir veiculo" in msg or "apagar veiculo" in msg:
-        try:
-            txt = msg.replace("apagar veiculo", "excluir veiculo")
-            partes = txt.split("excluir veiculo ")[1].split(" da montadora ")
-            mod = higienizar_nome(partes[0])
-            mont = higienizar_nome(partes[1])
-            excluir_veiculo_db(mont, mod)
-            return f"🗑️ **Excluído!** O veículo `{mod}` foi deletado permanentemente da montadora `{mont}`."
-        except:
-            return "⚠️ Para eu apagar, use o formato: `Chip, excluir veiculo [CARRO] da montadora [MARCA]`"
-
-    if "excluir montadora" in msg or "apagar montadora" in msg:
-        try:
-            txt = msg.replace("apagar montadora", "excluir montadora")
-            mont = higienizar_nome(txt.split("excluir montadora ")[1])
-            excluir_montadora_db(mont)
-            return f"💥 **Destruição Concluída!** A montadora `{mont}` e todos os seus veículos foram apagados da existência."
-        except:
-            return "⚠️ Para eu apagar a marca inteira, use: `Chip, excluir montadora [NOME]`"
-
-    if "editar informacoes" in msg or "editar veiculo" in msg or "editar carro" in msg:
-        return "🛠️ **Edição de Ficha Técnica:** Eu consigo criar e apagar arquivos, mas para alterar endereços Hexadecimais e **adicionar fotos**, por favor use a aba de botões **⚙️ GERENCIAR** logo abaixo do painel principal."
-
-    padroes_criar = ["cria a montadora", "crie a montadora", "criar montadora", "adicione a montadora", "nova montadora", "/montadora"]
-    if any(p in msg for p in padroes_criar):
-        nome_m = ""
-        if "/montadora" in msg:
-            nome_m = prompt_cru.split("/montadora", 1)[1].strip()
-        else:
-            partes = msg.split("montadora")
-            if len(partes) > 1:
-                nome_m = partes[1].replace("chamada", "").replace("a ", "").replace("uma ", "").replace("o nome", "").strip()
-
+    # 1. INTENÇÃO: Criar/Cadastrar Montadora (Usando Regex Flexível)
+    match_criar_m = re.search(r'(?:cria[r]?|crie|cadastra[r]?|cadastre|adiciona[r]?|adicione|nova)\s+(?:a\s+)?(?:montadora|marca)\s+(.+)', msg)
+    if match_criar_m or msg.startswith("/montadora "):
+        nome_m = match_criar_m.group(1).replace("chamada", "").strip() if match_criar_m else msg.split("/montadora ")[1].strip()
         nome_m = higienizar_nome(nome_m)
+        
         if not nome_m: 
-            return "Entendi que quer criar uma montadora, mas qual o nome? Exemplo: `Crie a montadora AUDI`"
+            return "Entendi que quer criar uma marca, mas faltou o nome! Ex: `Cadastre a montadora AUDI`"
 
         conn = conectar_db()
         cursor = conn.cursor()
         cursor.execute("SELECT nome FROM montadoras WHERE nome = ?", (nome_m,))
         if cursor.fetchone():
             conn.close()
-            # CHIP MAIS INTELIGENTE: Se a marca está no BD mas a pasta física não, ele conserta na hora!
             pasta_mont = os.path.join(BASE_DIR, nome_m)
             if not os.path.exists(pasta_mont):
                 os.makedirs(pasta_mont, exist_ok=True)
-                return f"🔧 **Ajuste Fino:** A montadora **{nome_m}** já existia no Banco de Dados da nuvem, mas a pasta física tinha sumido. Acabei de restaurar ela para você!"
-            return f"⚠️ Ops! A montadora **{nome_m}** já existe e está segura na nuvem!"
+                return f"🔧 **Ajuste Fino:** A marca **{nome_m}** já estava no banco, mas a pasta física tinha sumido. Eu a restaurei agora!"
+            return f"⚠️ Ops! A montadora **{nome_m}** já existe no cofre da nuvem!"
 
         cursor.execute("INSERT INTO montadoras (nome) VALUES (?)", (nome_m,))
         conn.commit()
         conn.close()
         os.makedirs(os.path.join(BASE_DIR, nome_m), exist_ok=True)
         backup_local_para_nuvem()
-        return f"🏭 **Entendido! Criei a montadora {nome_m} e já sincronizei com a Nuvem!** \n\n🎨 Para a logo, basta colocar um arquivo `{nome_m}.png` na pasta local `Logos/`."
+        return f"🏭 **Tudo certo!** Criei a montadora **{nome_m}** e mandei a atualização para a Nuvem! \n\n🎨 Para a logo aparecer, coloque um arquivo `{nome_m}.png` na pasta `Logos/`."
 
+    # 2. INTENÇÃO: Cadastrar Veículo (Usando Regex Flexível)
+    match_criar_v = re.search(r'(?:cria[r]?|crie|cadastra[r]?|cadastre|adiciona[r]?|adicione)\s+(?:o\s+)?(?:veiculo|carro|modelo)\s+(.+?)\s+(?:na\s+montadora|da\s+montadora|na\s+marca|da\s+marca)\s+(.+)', msg)
+    if match_criar_v:
+        mod = higienizar_nome(match_criar_v.group(1))
+        mont = higienizar_nome(match_criar_v.group(2))
+        
+        conn = conectar_db()
+        cursor = conn.cursor()
+        cursor.execute("SELECT nome FROM montadoras WHERE nome = ?", (mont,))
+        if not cursor.fetchone():
+            conn.close()
+            return f"⚠️ A marca '{mont}' ainda não existe. Peça para eu criá-la primeiro!"
+        conn.close()
+        
+        salvar_novo_veiculo_hibrido(mont, mod, "Não Definido", "Não Definido", "Criado pelo Chip via Chat", "Desativado", "8 bits", None)
+        return f"🚗 **Ficha Criada!** Adicionei o veículo `{mod}` na marca `{mont}` e salvei no Cofre da nuvem.\n\n💡 *Lembrete:* Vá até a aba **⚙️ GERENCIAR** para inserir os Hexadecimais e subir os mapas!"
+
+    # 3. INTENÇÃO: Renomear Montadora
+    match_renomear = re.search(r'renome(?:a|i)?[r]?\s+(?:a\s+)?(?:montadora|marca)\s+(.+?)\s+para\s+(.+)', msg)
+    if match_renomear:
+        antiga = higienizar_nome(match_renomear.group(1))
+        nova = higienizar_nome(match_renomear.group(2))
+        
+        conn = conectar_db()
+        cursor = conn.cursor()
+        cursor.execute("SELECT nome FROM montadoras WHERE nome = ?", (antiga,))
+        if not cursor.fetchone():
+            conn.close()
+            return f"⚠️ Não encontrei a montadora '{antiga}' no sistema."
+            
+        cursor.execute("UPDATE montadoras SET nome = ? WHERE nome = ?", (nova, antiga))
+        cursor.execute("UPDATE veiculos SET montadora_nome = ? WHERE montadora_nome = ?", (nova, antiga))
+        conn.commit(); conn.close()
+        
+        old_path = os.path.join(BASE_DIR, antiga)
+        new_path = os.path.join(BASE_DIR, nova)
+        if os.path.exists(old_path): os.rename(old_path, new_path)
+        
+        backup_local_para_nuvem()
+        return f"🔄 **Sucesso!** A marca `{antiga}` agora é conhecida como `{nova}`."
+
+    # 4. INTENÇÃO: Excluir Veículo
+    match_excluir_v = re.search(r'(?:exclui[r]?|exclua|apaga[r]?|apague|deleta[r]?|delete|remove[r]?|remova)\s+(?:o\s+)?(?:veiculo|carro|modelo)\s+(.+?)\s+(?:da\s+montadora|na\s+montadora|da\s+marca)\s+(.+)', msg)
+    if match_excluir_v:
+        mod = higienizar_nome(match_excluir_v.group(1))
+        mont = higienizar_nome(match_excluir_v.group(2))
+        excluir_veiculo_db(mont, mod)
+        return f"🗑️ **Excluído!** O veículo `{mod}` foi apagado permanentemente da `{mont}`."
+
+    # 5. INTENÇÃO: Excluir Montadora
+    match_excluir_m = re.search(r'(?:exclui[r]?|exclua|apaga[r]?|apague|deleta[r]?|delete|remove[r]?|remova)\s+(?:a\s+)?(?:montadora|marca)\s+(.+)', msg)
+    if match_excluir_m:
+        mont = higienizar_nome(match_excluir_m.group(1))
+        excluir_montadora_db(mont)
+        return f"💥 **Limpeza Concluída!** A montadora `{mont}` e tudo dentro dela virou poeira digital."
+
+    # 6. INTENÇÃO: Editar Informações
+    if "editar informacoes" in msg or "editar veiculo" in msg or "editar carro" in msg:
+        return "🛠️ **Edição de Ficha Técnica:** Eu consigo criar tabelas por aqui, mas para alterar endereços Hexadecimais e **adicionar imagens**, use a aba de botões **⚙️ GERENCIAR** na tela principal."
+
+    # 7. INTENÇÃO: Aprender / Memória
     if "/aprender" in msg:
         corpo = prompt_cru.split("/aprender", 1)[1].strip()
         if ":" in corpo:
@@ -407,42 +393,44 @@ def processar_linguagem_chip(prompt_cru):
         chaves = [c[0].upper() for c in cursor.fetchall()]
         conn.close()
         if chaves: return "🧠 **Termos que eu absorvi:**\n\n" + "\n".join([f"* {c}" for c in chaves])
-        return "Minha memória de termos está em branco. Me ensine algo usando `/aprender termo: explicacao`!"
+        return "Minha memória está em branco. Me ensine algo com `/aprender termo: explicacao`!"
 
     memoria_receptiva = buscar_memoria_chip(prompt_cru)
     if memoria_receptiva: return memoria_receptiva
 
+    # 8. INTENÇÃO: Status e Sincronização
     if any(s in msg for s in ["status", "quantos", "estatistica", "resumo"]):
         conn = conectar_db()
         c = conn.cursor()
         c.execute("SELECT COUNT(*) FROM montadoras"); q_m = c.fetchone()[0]
         c.execute("SELECT COUNT(*) FROM veiculos"); q_v = c.fetchone()[0]
         conn.close()
-        return f"📊 **Estatísticas Atuais:** Temos **{q_m} montadoras** e **{q_v} modelos** gravados no banco de dados."
+        return f"📊 **Estatísticas Atuais:** Temos **{q_m} montadoras** e **{q_v} modelos** gravados no cofre."
 
     if any(s in msg for s in ["sincronizar", "recuperar pastas", "sync"]):
         qtd = sincronizar_banco_com_pastas()
-        return f"🔄 **Manutenção Concluída:** A árvore de pastas foi completamente reconstruída."
+        return f"🔄 **Manutenção Concluída:** A árvore de diretórios está 100% alinhada com o banco de dados."
 
     if any(b in msg for b in ["backup", "salvar", "nuvem"]):
-        return f"🛡️ **Proteção Ativa:** Meu backup automático no Dataset `HyperTork_DB` está online e protegendo tudo!"
+        return f"🛡️ **Proteção Ativa:** Fique em paz! O backup automático está protegendo seus dados lá no `HyperTork_DB`!"
 
+    # 9. INTENÇÃO: Ajuda
     if any(a in msg for a in ["ajuda", "comandos", "o que voce faz", "help"]):
         return (
-            "🤖 **Sou o Chip e recebi poderes Administrativos!**\n\n"
-            "Escreva para mim usando estes padrões para eu operar o sistema:\n"
-            "* `Crie a montadora [MARCA]`\n"
-            "* `Renomear montadora [ANTIGA] para [NOVA]`\n"
-            "* `Cadastrar veiculo [CARRO] na montadora [MARCA]`\n"
-            "* `Excluir veiculo [CARRO] da montadora [MARCA]`\n"
-            "* `Excluir montadora [MARCA]`\n\n"
-            "Lembrando que para subir fotos, você ainda precisa usar a aba 'Gerenciar' ao lado!"
+            "🤖 **Meu Cérebro NLP foi ativado!**\n\n"
+            "Escreva naturalmente para eu operar o sistema. Exemplos válidos:\n"
+            "* `Cadastre a montadora Mercedes`\n"
+            "* `Renomeie a marca GM para Chevrolet`\n"
+            "* `Crie o carro Gol na montadora Volkswagen`\n"
+            "* `Exclua o veiculo Hilux da montadora Toyota`\n"
+            "* `Exclua a marca Chery`\n"
         )
 
-    if any(c == msg for c in ["oi", "ola", "bom dia", "boa tarde", "boa noite", "e ai", "chip"]):
-        return "🤖 Olá! Processamento de Linguagem Natural online. Qual instrução de banco de dados quer que eu execute hoje?"
+    # 10. INTENÇÃO: Cumprimentos
+    if any(c == msg for c in ["oi", "ola", "bom dia", "boa tarde", "boa noite", "e ai"]):
+        return "🤖 Olá! Estou online. Qual comando de banco de dados quer que eu execute agora?"
         
-    return "🤔 Recebi seu comando, mas não identifiquei a estrutura. Digite **ajuda** para ver o formato que eu consigo ler para cadastrar/editar tabelas!"
+    return "🤔 Poxa, não encontrei os parâmetros certos nessa frase. Digite **ajuda** para ver os exemplos de como eu compreendo as frases estruturadas!"
 
 # --- 🖼️ MODAL DE ZOOM EXPANDIDO EM TELA CHEIA ---
 @st.dialog("🔍 Visualizador de Mapa Ampliado", width="large")
@@ -454,14 +442,10 @@ def abrir_modal_zoom(foto_bytes, legenda_titulo):
     if st.button("❌ Fechar Visualização", use_container_width=True):
         st.rerun()
 
-# --- 🎨 ESTILIZAÇÃO CSS ---
+# --- 🎨 ESTILIZAÇÃO CSS (CORRIGIDA PARA NÃO TREMER A TELA) ---
 st.markdown("""
     <style>
     .block-container { padding-top: 2rem; }
-    div[data-testid="stVerticalBlockBorderWrapper"] {
-        max-width: 200px !important; margin: 0 auto !important; padding: 12px !important;
-        border-radius: 12px !important; box-shadow: 0 4px 12px rgba(0,0,0,0.15) !important;
-    }
     div.stButton > button { margin-top: 4px !important; border-radius: 8px !important; }
     </style>
 """, unsafe_allow_html=True)
