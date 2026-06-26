@@ -13,7 +13,12 @@ jobs:
           fetch-depth: 0
           lfs: true
 
-      - name: Enviar para o Hugging Face
+      - name: Converter imagens para LFS e Enviar
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
-        run: git push --force https://GrizzlyBear25:${HF_TOKEN}@huggingface.co/spaces/GrizzlyBear25/HyperTork_ main
+        run: |
+          git config --global user.email "bot@github.com"
+          git config --global user.name "Bot Sincronizador"
+          git lfs install
+          git lfs migrate import --yes --include="*.png,*.jpg,*.jpeg,*.db"
+          git push --force https://GrizzlyBear25:${HF_TOKEN}@huggingface.co/spaces/GrizzlyBear25/HyperTork_ main
