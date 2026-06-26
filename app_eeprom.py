@@ -43,16 +43,23 @@ def backup_local_para_nuvem():
             pass
     return False
 
-sincronizar_nuvem_para_local()
-
 def higienizar_nome(nome):
     if not nome: return ""
     nome_limpo = " ".join(nome.strip().upper().split())
     return re.sub(r'[\\/*?:"<>|]', "", nome_limpo)
 
 def sincronizar_banco_com_pastas():
+    """Recria TUDO a partir do BD, incluindo montadoras vazias"""
     conn = conectar_db()
     cursor = conn.cursor()
+    
+    # 1. Garante que todas as pastas de montadoras existam (mesmo vazias)
+    cursor.execute("SELECT nome FROM montadoras")
+    montadoras = cursor.fetchall()
+    for m in montadoras:
+        os.makedirs(os.path.join(BASE_DIR, m[0]), exist_ok=True)
+    
+    # 2. Recria os veículos, JSONs e Fotos
     cursor.execute("SELECT montadora_nome, modelo, posicao_inicio, intervalo, valores_invertidos, escala, detalhes, id FROM veiculos")
     veiculos = cursor.fetchall()
     
@@ -76,19 +83,7 @@ def sincronizar_banco_com_pastas():
     conn.close()
     return pastas_criadas
 
-# --- SETUP INICIAL ---
-def mapear_pasta_logos(base):
-    for d in os.listdir(base):
-        if d.lower() in ['logos', 'logo'] and os.path.isdir(os.path.join(base, d)):
-            return os.path.join(base, d)
-    return os.path.join(base, "Logos")
-
-LOGOS_DIR = mapear_pasta_logos(BASE_DIR)
-if not os.path.exists(LOGOS_DIR):
-    os.makedirs(LOGOS_DIR)
-
-st.set_page_config(page_title="HyperTork EEPROM System", layout="wide")
-
+# --- SETUP INICIAL (ORDEM CORRIGIDA) ---
 def conectar_db():
     conn = sqlite3.connect(DB_PATH)
     conn.execute("PRAGMA foreign_keys = ON;")
@@ -115,13 +110,28 @@ def init_db():
     conn.commit()
     conn.close()
 
+# Executa a rotina de boot: Baixa da nuvem -> Inicia DB -> Reconstrói pastas faltantes
+sincronizar_nuvem_para_local()
 init_db()
+sincronizar_banco_com_pastas()
+
+def mapear_pasta_logos(base):
+    for d in os.listdir(base):
+        if d.lower() in ['logos', 'logo'] and os.path.isdir(os.path.join(base, d)):
+            return os.path.join(base, d)
+    return os.path.join(base, "Logos")
+
+LOGOS_DIR = mapear_pasta_logos(BASE_DIR)
+if not os.path.exists(LOGOS_DIR):
+    os.makedirs(LOGOS_DIR)
+
+st.set_page_config(page_title="HyperTork EEPROM System", layout="wide")
 
 # --- VARIÁVEIS DE SESSÃO ---
 if 'montadora_selecionada' not in st.session_state:
     st.session_state.montadora_selecionada = ""
 if 'chat_historico' not in st.session_state:
-    st.session_state.chat_historico = [{"role": "assistant", "content": "Olá! Eu sou o **Chip**. Fui promovido a Operador! Você pode me pedir para cadastrar, renomear ou excluir veículos direto por aqui."}]
+    st.session_state.chat_historico = [{"role": "assistant", "content": "Olá! Eu sou o **Chip**. Ajustei meus engrenagens! Agora eu recrio qualquer pasta vazia que o servidor tentar apagar."}]
 
 # --- FUNÇÕES DE GERENCIAMENTO ---
 def listar_montadoras():
@@ -253,7 +263,6 @@ def excluir_montadora_db(montadora):
 
 # --- 🧠 LÓGICA DE APRENDIZADO E NLP DO CHIP ---
 def normalizar_texto(texto):
-    """Remove acentos, caracteres especiais básicos e padroniza para minúsculo"""
     texto = unicodedata.normalize('NFKD', texto).encode('ASCII', 'ignore').decode('utf-8')
     return texto.lower().strip()
 
@@ -281,7 +290,6 @@ def buscar_memoria_chip(texto):
 def processar_linguagem_chip(prompt_cru):
     msg = normalizar_texto(prompt_cru)
     
-    # 1. INTENÇÃO: Renomear Montadora
     if "renomear montadora" in msg:
         try:
             partes = msg.split("renomear montadora ")[1].split(" para ")
@@ -308,7 +316,6 @@ def processar_linguagem_chip(prompt_cru):
         except:
             return "⚠️ Para eu entender, use exatamente o formato: `Chip, renomear montadora [NOME ANTIGO] para [NOME NOVO]`"
 
-    # 2. INTENÇÃO: Cadastrar Veículo
     if "cadastrar veiculo" in msg or "criar veiculo" in msg:
         try:
             txt = msg.replace("criar veiculo", "cadastrar veiculo")
@@ -324,26 +331,22 @@ def processar_linguagem_chip(prompt_cru):
                 return f"⚠️ A montadora '{mont}' não existe. Peça para eu criá-la primeiro!"
             conn.close()
             
-            # Cria o veículo com dados base
             salvar_novo_veiculo_hibrido(mont, mod, "Não Definido", "Não Definido", "Criado pelo Chip via Chat", "Desativado", "8 bits", None)
             return f"🚗 **Ficha Criada!** Adicionei o veículo `{mod}` na montadora `{mont}` e salvei no Cofre.\n\n💡 *Dica:* Como sou um bot de texto, vá até a aba **⚙️ GERENCIAR** depois para inserir os Hexadecimais reais e fazer o upload das fotos!"
         except:
             return "⚠️ Para eu cadastrar o carro, use o formato: `Chip, cadastrar veiculo [CARRO] na montadora [MARCA]`"
 
-    # 3. INTENÇÃO: Excluir Veículo
     if "excluir veiculo" in msg or "apagar veiculo" in msg:
         try:
             txt = msg.replace("apagar veiculo", "excluir veiculo")
             partes = txt.split("excluir veiculo ")[1].split(" da montadora ")
             mod = higienizar_nome(partes[0])
             mont = higienizar_nome(partes[1])
-            
             excluir_veiculo_db(mont, mod)
             return f"🗑️ **Excluído!** O veículo `{mod}` foi deletado permanentemente da montadora `{mont}`."
         except:
             return "⚠️ Para eu apagar, use o formato: `Chip, excluir veiculo [CARRO] da montadora [MARCA]`"
 
-    # 4. INTENÇÃO: Excluir Montadora
     if "excluir montadora" in msg or "apagar montadora" in msg:
         try:
             txt = msg.replace("apagar montadora", "excluir montadora")
@@ -353,11 +356,9 @@ def processar_linguagem_chip(prompt_cru):
         except:
             return "⚠️ Para eu apagar a marca inteira, use: `Chip, excluir montadora [NOME]`"
 
-    # 5. INTENÇÃO: Editar Veículo (Guia para UI)
     if "editar informacoes" in msg or "editar veiculo" in msg or "editar carro" in msg:
-        return "🛠️ **Edição de Ficha Técnica:** Eu consigo criar e apagar arquivos, mas para alterar endereços Hexadecimais e **adicionar fotos**, por favor use a aba de botões **⚙️ GERENCIAR** logo abaixo do painel principal. Meu terminal de texto ainda não consegue fazer upload de fotos do seu HD!"
+        return "🛠️ **Edição de Ficha Técnica:** Eu consigo criar e apagar arquivos, mas para alterar endereços Hexadecimais e **adicionar fotos**, por favor use a aba de botões **⚙️ GERENCIAR** logo abaixo do painel principal."
 
-    # 6. INTENÇÃO: Criar Montadora
     padroes_criar = ["cria a montadora", "crie a montadora", "criar montadora", "adicione a montadora", "nova montadora", "/montadora"]
     if any(p in msg for p in padroes_criar):
         nome_m = ""
@@ -377,6 +378,11 @@ def processar_linguagem_chip(prompt_cru):
         cursor.execute("SELECT nome FROM montadoras WHERE nome = ?", (nome_m,))
         if cursor.fetchone():
             conn.close()
+            # CHIP MAIS INTELIGENTE: Se a marca está no BD mas a pasta física não, ele conserta na hora!
+            pasta_mont = os.path.join(BASE_DIR, nome_m)
+            if not os.path.exists(pasta_mont):
+                os.makedirs(pasta_mont, exist_ok=True)
+                return f"🔧 **Ajuste Fino:** A montadora **{nome_m}** já existia no Banco de Dados da nuvem, mas a pasta física tinha sumido. Acabei de restaurar ela para você!"
             return f"⚠️ Ops! A montadora **{nome_m}** já existe e está segura na nuvem!"
 
         cursor.execute("INSERT INTO montadoras (nome) VALUES (?)", (nome_m,))
@@ -386,7 +392,6 @@ def processar_linguagem_chip(prompt_cru):
         backup_local_para_nuvem()
         return f"🏭 **Entendido! Criei a montadora {nome_m} e já sincronizei com a Nuvem!** \n\n🎨 Para a logo, basta colocar um arquivo `{nome_m}.png` na pasta local `Logos/`."
 
-    # 7. INTENÇÃO: Aprender / Memória
     if "/aprender" in msg:
         corpo = prompt_cru.split("/aprender", 1)[1].strip()
         if ":" in corpo:
@@ -404,11 +409,9 @@ def processar_linguagem_chip(prompt_cru):
         if chaves: return "🧠 **Termos que eu absorvi:**\n\n" + "\n".join([f"* {c}" for c in chaves])
         return "Minha memória de termos está em branco. Me ensine algo usando `/aprender termo: explicacao`!"
 
-    # 8. INTENÇÃO: Busca em Memória
     memoria_receptiva = buscar_memoria_chip(prompt_cru)
     if memoria_receptiva: return memoria_receptiva
 
-    # 9. INTENÇÃO: Status e Sincronização
     if any(s in msg for s in ["status", "quantos", "estatistica", "resumo"]):
         conn = conectar_db()
         c = conn.cursor()
@@ -419,12 +422,11 @@ def processar_linguagem_chip(prompt_cru):
 
     if any(s in msg for s in ["sincronizar", "recuperar pastas", "sync"]):
         qtd = sincronizar_banco_com_pastas()
-        return f"🔄 **Manutenção Concluída:** Diagnostiquei a árvore e reconstruí **{qtd} pastas** físicas locais ausentes."
+        return f"🔄 **Manutenção Concluída:** A árvore de pastas foi completamente reconstruída."
 
     if any(b in msg for b in ["backup", "salvar", "nuvem"]):
         return f"🛡️ **Proteção Ativa:** Meu backup automático no Dataset `HyperTork_DB` está online e protegendo tudo!"
 
-    # 10. INTENÇÃO: Ajuda
     if any(a in msg for a in ["ajuda", "comandos", "o que voce faz", "help"]):
         return (
             "🤖 **Sou o Chip e recebi poderes Administrativos!**\n\n"
@@ -437,7 +439,6 @@ def processar_linguagem_chip(prompt_cru):
             "Lembrando que para subir fotos, você ainda precisa usar a aba 'Gerenciar' ao lado!"
         )
 
-    # 11. INTENÇÃO: Cumprimentos
     if any(c == msg for c in ["oi", "ola", "bom dia", "boa tarde", "boa noite", "e ai", "chip"]):
         return "🤖 Olá! Processamento de Linguagem Natural online. Qual instrução de banco de dados quer que eu execute hoje?"
         
