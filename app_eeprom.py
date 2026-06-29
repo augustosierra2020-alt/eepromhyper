@@ -383,33 +383,77 @@ def abrir_modal_zoom(foto_bytes, legenda_titulo):
     if st.button("❌ Fechar Visualização", use_container_width=True): st.rerun()
 
 # ==========================================
-# 6. ESTILIZAÇÃO CSS E ESTADO GLOBAL
+# 6. ESTILIZAÇÃO CSS AVANÇADA (A Mágica)
 # ==========================================
 st.markdown("""
     <style>
-    /* Estabilidade de Tela e Ajustes Base */
+    /* Estabilidade de Tela */
     html { overflow-y: scroll !important; }
     .block-container { padding-top: 2rem; }
-    div[data-testid="stColumn"] { min-width: 0 !important; }
     
-    /* POP-UP FLUTUANTE DO CHIP (Laranja, Redondo e Animado) */
+    /* -----------------------------------------------------------
+       BOTÕES GIGANTES DA TELA INICIAL (Nintendo Switch Style)
+    ----------------------------------------------------------- */
+    /* Botão Azul: Gráficos EEPROM */
+    div[data-testid="stVerticalBlock"]:has(.home-screen-marker) div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"]:nth-child(1) div[data-testid="stButton"] button {
+        background: linear-gradient(145deg, #1E88E5, #1565C0) !important;
+        height: 250px !important;
+        border-radius: 20px !important;
+        color: white !important;
+        border: none !important;
+        transition: transform 0.2s, box-shadow 0.2s !important;
+        width: 100% !important;
+    }
+    div[data-testid="stVerticalBlock"]:has(.home-screen-marker) div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"]:nth-child(1) div[data-testid="stButton"] button:hover {
+        transform: translateY(-5px) !important;
+        box-shadow: 0 12px 24px rgba(0,0,0,0.4) !important;
+    }
+    
+    /* Botão Vermelho: Códigos OBD2 */
+    div[data-testid="stVerticalBlock"]:has(.home-screen-marker) div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"]:nth-child(2) div[data-testid="stButton"] button {
+        background: linear-gradient(145deg, #E53935, #C62828) !important;
+        height: 250px !important;
+        border-radius: 20px !important;
+        color: white !important;
+        border: none !important;
+        transition: transform 0.2s, box-shadow 0.2s !important;
+        width: 100% !important;
+    }
+    div[data-testid="stVerticalBlock"]:has(.home-screen-marker) div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"]:nth-child(2) div[data-testid="stButton"] button:hover {
+        transform: translateY(-5px) !important;
+        box-shadow: 0 12px 24px rgba(0,0,0,0.4) !important;
+    }
+    
+    /* Texto de dentro dos botões */
+    div[data-testid="stVerticalBlock"]:has(.home-screen-marker) div[data-testid="stButton"] button p {
+        font-size: 1.4rem !important;
+        white-space: pre-wrap !important;
+        text-align: center !important;
+        line-height: 1.4 !important;
+    }
+
+    /* -----------------------------------------------------------
+       POP-UP FLUTUANTE DO CHIP (O Círculo Laranja no canto)
+    ----------------------------------------------------------- */
+    /* Trava a caixa invisível do Popover no canto para não esticar a tela */
     div[data-testid="stPopover"] {
         position: fixed !important;
         bottom: 30px !important;
         right: 30px !important;
         z-index: 999999 !important;
-    }
-    div[data-testid="stPopover"] > button {
-        background-color: #FF8C00 !important; /* Laranja Chip */
-        border-radius: 50% !important;
-        width: 70px !important;
+        width: 70px !important; /* Força o botão a não vazar a tela */
         height: 70px !important;
+    }
+    
+    /* Pinta e arredonda o Botão do Popover */
+    div[data-testid="stPopover"] > button {
+        background-color: #FF8C00 !important; /* Laranja */
+        border-radius: 50% !important;
+        width: 100% !important;
+        height: 100% !important;
         border: none !important;
         box-shadow: 0 8px 16px rgba(0,0,0,0.3) !important;
         transition: transform 0.2s !important;
-        display: flex !important;
-        justify-content: center !important;
-        align-items: center !important;
         padding: 0 !important;
     }
     div[data-testid="stPopover"] > button:hover {
@@ -420,14 +464,15 @@ st.markdown("""
         font-size: 35px !important;
         margin: 0 !important;
         padding: 0 !important;
+        line-height: 1 !important;
     }
-    /* Estiliza a caixa interna de conversa do Pop-up */
+    
+    /* Estiliza o painel de conversa quando aberto */
     div[data-testid="stPopoverBody"] {
         width: 350px !important;
-        max-height: 500px !important;
-        overflow-y: auto !important;
         border-radius: 15px !important;
         box-shadow: 0 10px 30px rgba(0,0,0,0.3) !important;
+        padding: 1rem !important;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -440,7 +485,7 @@ if 'chat_historico' not in st.session_state:
     st.session_state.chat_historico = [{"role": "assistant", "content": "Oi! Eu sou o Chip, como posso ajudar?"}]
 
 # ==========================================
-# 7. BARRA LATERAL GERAL (Apenas Navegação)
+# 7. BARRA LATERAL (Apenas Navegação)
 # ==========================================
 st.sidebar.title("🛡️ HyperTork Hub")
 if st.session_state.app_mode != "HOME":
@@ -449,7 +494,7 @@ if st.session_state.app_mode != "HOME":
         st.session_state.montadora_selecionada = ""
         st.rerun()
 else:
-    st.sidebar.info("📌 Selecione uma das ferramentas na tela principal.")
+    st.sidebar.info("📌 Escolha uma das ferramentas ao lado.")
 
 # ==========================================
 # 8. RENDERIZAÇÃO DAS TELAS
@@ -457,41 +502,8 @@ else:
 if st.session_state.app_mode == "HOME":
     st.markdown("<h1 style='text-align: center; margin-bottom: 50px;'>HyperTork System Hub</h1>", unsafe_allow_html=True)
     
-    # CSS Injetado EXCLUSIVAMENTE para alvejar os dois botões da Home
-    st.markdown("""
-        <style>
-        div[data-testid="stHorizontalBlock"] div[data-testid="column"]:nth-of-type(1) div[data-testid="stButton"] button {
-            background: linear-gradient(145deg, #1E88E5, #1565C0) !important;
-            height: 250px !important;
-            border-radius: 20px !important;
-            color: white !important;
-            border: none !important;
-            transition: transform 0.2s, box-shadow 0.2s !important;
-        }
-        div[data-testid="stHorizontalBlock"] div[data-testid="column"]:nth-of-type(1) div[data-testid="stButton"] button:hover {
-            transform: translateY(-5px) !important;
-            box-shadow: 0 12px 24px rgba(0,0,0,0.4) !important;
-        }
-        div[data-testid="stHorizontalBlock"] div[data-testid="column"]:nth-of-type(2) div[data-testid="stButton"] button {
-            background: linear-gradient(145deg, #E53935, #C62828) !important;
-            height: 250px !important;
-            border-radius: 20px !important;
-            color: white !important;
-            border: none !important;
-            transition: transform 0.2s, box-shadow 0.2s !important;
-        }
-        div[data-testid="stHorizontalBlock"] div[data-testid="column"]:nth-of-type(2) div[data-testid="stButton"] button:hover {
-            transform: translateY(-5px) !important;
-            box-shadow: 0 12px 24px rgba(0,0,0,0.4) !important;
-        }
-        div[data-testid="stHorizontalBlock"] div[data-testid="stButton"] button p {
-            font-size: 1.3rem !important;
-            white-space: pre-wrap !important;
-            text-align: center !important;
-            line-height: 1.5 !important;
-        }
-        </style>
-    """, unsafe_allow_html=True)
+    # 🌟 MÁGICA DO CSS: Esse marcador avisa o CSS que estamos na tela inicial
+    st.markdown('<div class="home-screen-marker"></div>', unsafe_allow_html=True)
     
     col1, col2 = st.columns(2)
     with col1:
@@ -514,13 +526,13 @@ elif st.session_state.app_mode == "OBD2":
     with st.container(border=True):
         col_cod, col_mont, col_mod, col_ano = st.columns([2, 2, 2, 1])
         with col_cod:
-            codigo_input = st.text_input("Código (Ex: P0001, C0035)", placeholder="Obrigatório").strip().upper()
+            codigo_input = st.text_input("Código (Ex: P0001)", placeholder="Obrigatório").strip().upper()
         with col_mont:
-            mont_input = st.text_input("Montadora (Opcional)", placeholder="Ex: Volvo, Scania").strip()
+            mont_input = st.text_input("Montadora", placeholder="Ex: Volvo").strip()
         with col_mod:
-            mod_input = st.text_input("Modelo (Opcional)", placeholder="Ex: VM 330").strip()
+            mod_input = st.text_input("Modelo", placeholder="Ex: VM 330").strip()
         with col_ano:
-            ano_input = st.text_input("Ano (Opcional)", placeholder="Ex: 2014").strip()
+            ano_input = st.text_input("Ano", placeholder="Ex: 2014").strip()
             
         btn_buscar = st.button("🔍 Iniciar Diagnóstico do Chefe", use_container_width=True, type="primary")
             
@@ -544,7 +556,7 @@ elif st.session_state.app_mode == "OBD2":
         st.write("Nenhum código foi pesquisado ainda.")
 
 # ------------------------------------------
-# TELA 2: GESTÃO EEPROM (Layout Estabilizado)
+# TELA 2: GESTÃO EEPROM
 # ------------------------------------------
 elif st.session_state.app_mode == "EEPROM":
     if st.session_state.montadora_selecionada == "":
@@ -552,7 +564,7 @@ elif st.session_state.app_mode == "EEPROM":
         st.markdown("### Escolha a Montadora desejada para abrir os modelos")
         st.write("")
         if not montadoras_existentes:
-            st.info("Nenhuma montadora cadastrada. Use o Chip no canto da tela para criar uma!")
+            st.info("Nenhuma montadora cadastrada. Fale com o Chip ali no canto inferior direito para criar uma!")
         else:
             cols = st.columns(4)
             for i, m in enumerate(montadoras_existentes):
@@ -776,21 +788,29 @@ elif st.session_state.app_mode == "EEPROM":
                             st.rerun()
 
 # ==========================================
-# 9. CHIP POP-UP FLUTUANTE GLOBAL
+# 9. CHIP POP-UP FLUTUANTE (BOTÃO LARANJA)
 # ==========================================
 with st.popover("🤖"):
-    st.markdown("#### 💬 Central de Diagnóstico IA")
-    for msg in st.session_state.chat_historico:
-        with st.chat_message(msg["role"]):
-            st.markdown(msg["content"])
-            
-    with st.form("chip_form", clear_on_submit=True):
+    st.markdown("#### 💬 Chip - IA")
+    
+    chat_container = st.container(height=350)
+    with chat_container:
+        for msg in st.session_state.chat_historico:
+            with st.chat_message(msg["role"]):
+                st.markdown(msg["content"])
+                
+    # O form evita que o popup se feche sozinho ao digitar
+    with st.form("chip_chat_form", clear_on_submit=True):
         cols = st.columns([4, 1])
-        prompt = cols[0].text_input("Mensagem", label_visibility="collapsed", placeholder="O que manda, chefe?")
+        prompt = cols[0].text_input("Mensagem", label_visibility="collapsed", placeholder="Digite algo...")
         submit = cols[1].form_submit_button("Enviar")
         
         if submit and prompt.strip():
-            st.session_state.chat_historico.append({"role": "user", "content": prompt})
-            resposta = processar_linguagem_chip(prompt)
-            st.session_state.chat_historico.append({"role": "assistant", "content": resposta})
-            st.rerun()
+            if prompt.strip().lower() in ["/limpar", "limpar chat"]:
+                st.session_state.chat_historico = [{"role": "assistant", "content": "Oi! Eu sou o Chip, como posso ajudar?"}]
+                st.rerun()
+            else:
+                st.session_state.chat_historico.append({"role": "user", "content": prompt})
+                resposta = processar_linguagem_chip(prompt)
+                st.session_state.chat_historico.append({"role": "assistant", "content": resposta})
+                st.rerun()
