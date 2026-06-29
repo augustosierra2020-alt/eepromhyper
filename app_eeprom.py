@@ -435,19 +435,17 @@ st.markdown("""
     /* -----------------------------------------------------------
        POP-UP FLUTUANTE DO CHIP (O Círculo Laranja no canto)
     ----------------------------------------------------------- */
-    /* Trava a caixa invisível do Popover no canto para não esticar a tela */
     div[data-testid="stPopover"] {
         position: fixed !important;
         bottom: 30px !important;
         right: 30px !important;
         z-index: 999999 !important;
-        width: 70px !important; /* Força o botão a não vazar a tela */
+        width: 70px !important;
         height: 70px !important;
     }
     
-    /* Pinta e arredonda o Botão do Popover */
     div[data-testid="stPopover"] > button {
-        background-color: #FF8C00 !important; /* Laranja */
+        background-color: #FF8C00 !important;
         border-radius: 50% !important;
         width: 100% !important;
         height: 100% !important;
@@ -467,7 +465,6 @@ st.markdown("""
         line-height: 1 !important;
     }
     
-    /* Estiliza o painel de conversa quando aberto */
     div[data-testid="stPopoverBody"] {
         width: 350px !important;
         border-radius: 15px !important;
@@ -485,7 +482,7 @@ if 'chat_historico' not in st.session_state:
     st.session_state.chat_historico = [{"role": "assistant", "content": "Oi! Eu sou o Chip, como posso ajudar?"}]
 
 # ==========================================
-# 7. BARRA LATERAL (Apenas Navegação)
+# 7. BARRA LATERAL E INICIALIZAÇÃO DE DADOS
 # ==========================================
 st.sidebar.title("🛡️ HyperTork Hub")
 if st.session_state.app_mode != "HOME":
@@ -496,13 +493,15 @@ if st.session_state.app_mode != "HOME":
 else:
     st.sidebar.info("📌 Escolha uma das ferramentas ao lado.")
 
+# Carrega a lista global de montadoras para evitar o NameError
+montadoras_existentes = listar_montadoras()
+
 # ==========================================
 # 8. RENDERIZAÇÃO DAS TELAS
 # ==========================================
 if st.session_state.app_mode == "HOME":
     st.markdown("<h1 style='text-align: center; margin-bottom: 50px;'>HyperTork System Hub</h1>", unsafe_allow_html=True)
     
-    # 🌟 MÁGICA DO CSS: Esse marcador avisa o CSS que estamos na tela inicial
     st.markdown('<div class="home-screen-marker"></div>', unsafe_allow_html=True)
     
     col1, col2 = st.columns(2)
