@@ -3,3 +3,5 @@ pillow
 huggingface_hub
 pandas
 duckduckgo-search
+openpyxl
+python-docx
