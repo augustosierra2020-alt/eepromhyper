@@ -52,7 +52,6 @@ def higienizar_nome(nome):
     return re.sub(r'[\\/*?:"<>|]', "", nome_limpo)
 
 def limpar_para_comparacao(texto):
-    """Remove espaços, hifens e símbolos para forçar o "Match" perfeito das logos"""
     if not texto: return ""
     texto = unicodedata.normalize('NFKD', str(texto)).encode('ASCII', 'ignore').decode('utf-8')
     return re.sub(r'[^A-Z0-9]', '', texto.upper())
@@ -247,14 +246,10 @@ def buscar_logo_montadora_automatica(montadora):
     if os.path.exists(LOGOS_DIR):
         arquivos = os.listdir(LOGOS_DIR)
         mont_alvo = limpar_para_comparacao(montadora)
-        
-        # Tentativa 1: Busca exata ignorando case/simbolos
         for arquivo in arquivos:
             if not arquivo.lower().endswith(('.png', '.jpg', '.jpeg', '.webp')): continue
             nome_arq = limpar_para_comparacao(arquivo.split('.')[0])
             if mont_alvo == nome_arq: return os.path.join(LOGOS_DIR, arquivo)
-            
-        # Tentativa 2: Busca por fragmento (ex: "DAF XF" acha "DAF")
         for arquivo in arquivos:
             if not arquivo.lower().endswith(('.png', '.jpg', '.jpeg', '.webp')): continue
             nome_arq = limpar_para_comparacao(arquivo.split('.')[0])
@@ -388,14 +383,52 @@ def abrir_modal_zoom(foto_bytes, legenda_titulo):
     if st.button("❌ Fechar Visualização", use_container_width=True): st.rerun()
 
 # ==========================================
-# 6. ESTILIZAÇÃO E CONTROLE DE ESTADO
+# 6. ESTILIZAÇÃO CSS E ESTADO GLOBAL
 # ==========================================
 st.markdown("""
     <style>
-    /* Estabilidade de Tela */
+    /* Estabilidade de Tela e Ajustes Base */
     html { overflow-y: scroll !important; }
     .block-container { padding-top: 2rem; }
     div[data-testid="stColumn"] { min-width: 0 !important; }
+    
+    /* POP-UP FLUTUANTE DO CHIP (Laranja, Redondo e Animado) */
+    div[data-testid="stPopover"] {
+        position: fixed !important;
+        bottom: 30px !important;
+        right: 30px !important;
+        z-index: 999999 !important;
+    }
+    div[data-testid="stPopover"] > button {
+        background-color: #FF8C00 !important; /* Laranja Chip */
+        border-radius: 50% !important;
+        width: 70px !important;
+        height: 70px !important;
+        border: none !important;
+        box-shadow: 0 8px 16px rgba(0,0,0,0.3) !important;
+        transition: transform 0.2s !important;
+        display: flex !important;
+        justify-content: center !important;
+        align-items: center !important;
+        padding: 0 !important;
+    }
+    div[data-testid="stPopover"] > button:hover {
+        transform: scale(1.1) !important;
+        background-color: #E67E22 !important;
+    }
+    div[data-testid="stPopover"] > button p {
+        font-size: 35px !important;
+        margin: 0 !important;
+        padding: 0 !important;
+    }
+    /* Estiliza a caixa interna de conversa do Pop-up */
+    div[data-testid="stPopoverBody"] {
+        width: 350px !important;
+        max-height: 500px !important;
+        overflow-y: auto !important;
+        border-radius: 15px !important;
+        box-shadow: 0 10px 30px rgba(0,0,0,0.3) !important;
+    }
     </style>
 """, unsafe_allow_html=True)
 
@@ -404,10 +437,10 @@ if 'app_mode' not in st.session_state:
 if 'montadora_selecionada' not in st.session_state:
     st.session_state.montadora_selecionada = ""
 if 'chat_historico' not in st.session_state:
-    st.session_state.chat_historico = [{"role": "assistant", "content": "🔧 Fala chefe! Aqui é o Chip. Posso gerenciar os mapas EEPROM nas baias ou puxar um laudo OBD-II completo. Manda a bronca!"}]
+    st.session_state.chat_historico = [{"role": "assistant", "content": "Oi! Eu sou o Chip, como posso ajudar?"}]
 
 # ==========================================
-# 7. BARRA LATERAL GERAL
+# 7. BARRA LATERAL GERAL (Apenas Navegação)
 # ==========================================
 st.sidebar.title("🛡️ HyperTork Hub")
 if st.session_state.app_mode != "HOME":
@@ -415,24 +448,8 @@ if st.session_state.app_mode != "HOME":
         st.session_state.app_mode = "HOME"
         st.session_state.montadora_selecionada = ""
         st.rerun()
-    st.sidebar.markdown("---")
-
-st.sidebar.markdown("🤖 **Chip - Mecânico Chefe IA**")
-for mensagem in st.session_state.chat_historico:
-    with st.sidebar.chat_message(mensagem["role"]): st.markdown(mensagem["content"])
-
-if prompt := st.sidebar.chat_input("Diga um comando ou peça um laudo de falha..."):
-    st.session_state.chat_historico.append({"role": "user", "content": prompt})
-    if prompt.strip().lower() in ["/limpar", "limpar chat"]:
-        st.session_state.chat_historico = [{"role": "assistant", "content": "Oficina limpa, chefe!"}]
-        st.rerun()
-    else:
-        with st.spinner("Analisando esquemas elétricos e manuais..."):
-            resposta = processar_linguagem_chip(prompt)
-        st.session_state.chat_historico.append({"role": "assistant", "content": resposta})
-        st.rerun()
-
-montadoras_existentes = listar_montadoras()
+else:
+    st.sidebar.info("📌 Selecione uma das ferramentas na tela principal.")
 
 # ==========================================
 # 8. RENDERIZAÇÃO DAS TELAS
@@ -440,10 +457,10 @@ montadoras_existentes = listar_montadoras()
 if st.session_state.app_mode == "HOME":
     st.markdown("<h1 style='text-align: center; margin-bottom: 50px;'>HyperTork System Hub</h1>", unsafe_allow_html=True)
     
-    # CSS Injetado EXCLUSIVAMENTE para a Home Page (Botões gigantes Nintendo Switch)
+    # CSS Injetado EXCLUSIVAMENTE para alvejar os dois botões da Home
     st.markdown("""
         <style>
-        div[data-testid="column"]:nth-of-type(1) div[data-testid="stButton"] button {
+        div[data-testid="stHorizontalBlock"] div[data-testid="column"]:nth-of-type(1) div[data-testid="stButton"] button {
             background: linear-gradient(145deg, #1E88E5, #1565C0) !important;
             height: 250px !important;
             border-radius: 20px !important;
@@ -451,11 +468,11 @@ if st.session_state.app_mode == "HOME":
             border: none !important;
             transition: transform 0.2s, box-shadow 0.2s !important;
         }
-        div[data-testid="column"]:nth-of-type(1) div[data-testid="stButton"] button:hover {
-            transform: translateY(-5px);
+        div[data-testid="stHorizontalBlock"] div[data-testid="column"]:nth-of-type(1) div[data-testid="stButton"] button:hover {
+            transform: translateY(-5px) !important;
             box-shadow: 0 12px 24px rgba(0,0,0,0.4) !important;
         }
-        div[data-testid="column"]:nth-of-type(2) div[data-testid="stButton"] button {
+        div[data-testid="stHorizontalBlock"] div[data-testid="column"]:nth-of-type(2) div[data-testid="stButton"] button {
             background: linear-gradient(145deg, #E53935, #C62828) !important;
             height: 250px !important;
             border-radius: 20px !important;
@@ -463,11 +480,11 @@ if st.session_state.app_mode == "HOME":
             border: none !important;
             transition: transform 0.2s, box-shadow 0.2s !important;
         }
-        div[data-testid="column"]:nth-of-type(2) div[data-testid="stButton"] button:hover {
-            transform: translateY(-5px);
+        div[data-testid="stHorizontalBlock"] div[data-testid="column"]:nth-of-type(2) div[data-testid="stButton"] button:hover {
+            transform: translateY(-5px) !important;
             box-shadow: 0 12px 24px rgba(0,0,0,0.4) !important;
         }
-        div[data-testid="stButton"] button p {
+        div[data-testid="stHorizontalBlock"] div[data-testid="stButton"] button p {
             font-size: 1.3rem !important;
             white-space: pre-wrap !important;
             text-align: center !important;
@@ -478,7 +495,6 @@ if st.session_state.app_mode == "HOME":
     
     col1, col2 = st.columns(2)
     with col1:
-        # Usando um único botão do Streamlit, mas com quebras de linha para texto rico
         if st.button("⚙️\n\n**Gráficos EEPROM**\n\nGerenciamento de banco de dados, mapas hexadecimais e escalas.", use_container_width=True):
             st.session_state.app_mode = "EEPROM"
             st.rerun()
@@ -536,7 +552,7 @@ elif st.session_state.app_mode == "EEPROM":
         st.markdown("### Escolha a Montadora desejada para abrir os modelos")
         st.write("")
         if not montadoras_existentes:
-            st.info("Nenhuma montadora cadastrada. Converse com o Chip no painel lateral para criar uma!")
+            st.info("Nenhuma montadora cadastrada. Use o Chip no canto da tela para criar uma!")
         else:
             cols = st.columns(4)
             for i, m in enumerate(montadoras_existentes):
@@ -758,3 +774,23 @@ elif st.session_state.app_mode == "EEPROM":
                             excluir_veiculo_db(m_sel_v, v_sel_edit)
                             st.success(f"✅ Remoção Concluída!")
                             st.rerun()
+
+# ==========================================
+# 9. CHIP POP-UP FLUTUANTE GLOBAL
+# ==========================================
+with st.popover("🤖"):
+    st.markdown("#### 💬 Central de Diagnóstico IA")
+    for msg in st.session_state.chat_historico:
+        with st.chat_message(msg["role"]):
+            st.markdown(msg["content"])
+            
+    with st.form("chip_form", clear_on_submit=True):
+        cols = st.columns([4, 1])
+        prompt = cols[0].text_input("Mensagem", label_visibility="collapsed", placeholder="O que manda, chefe?")
+        submit = cols[1].form_submit_button("Enviar")
+        
+        if submit and prompt.strip():
+            st.session_state.chat_historico.append({"role": "user", "content": prompt})
+            resposta = processar_linguagem_chip(prompt)
+            st.session_state.chat_historico.append({"role": "assistant", "content": resposta})
+            st.rerun()
