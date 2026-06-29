@@ -51,6 +51,12 @@ def higienizar_nome(nome):
     nome_limpo = " ".join(nome.strip().upper().split())
     return re.sub(r'[\\/*?:"<>|]', "", nome_limpo)
 
+def limpar_para_comparacao(texto):
+    """Remove espaços, hifens e símbolos para forçar o "Match" perfeito das logos"""
+    if not texto: return ""
+    texto = unicodedata.normalize('NFKD', str(texto)).encode('ASCII', 'ignore').decode('utf-8')
+    return re.sub(r'[^A-Z0-9]', '', texto.upper())
+
 def sincronizar_banco_com_pastas():
     conn = conectar_db()
     cursor = conn.cursor()
@@ -106,13 +112,11 @@ def init_db():
     """)
     cursor.execute("CREATE TABLE IF NOT EXISTS chip_memoria (id INTEGER PRIMARY KEY AUTOINCREMENT, chave TEXT UNIQUE NOT NULL, valor TEXT NOT NULL)")
     
-    # Tabela OBD-II (agora com colunas extras para filtros)
     cursor.execute('''CREATE TABLE IF NOT EXISTS obd2_history
                  (id INTEGER PRIMARY KEY AUTOINCREMENT, 
                   codigo TEXT, montadora TEXT, modelo TEXT, ano TEXT,
                   descricao TEXT, data TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
                   
-    # Garante que as colunas novas existam caso o banco seja antigo
     try: cursor.execute("ALTER TABLE obd2_history ADD COLUMN montadora TEXT")
     except: pass
     try: cursor.execute("ALTER TABLE obd2_history ADD COLUMN modelo TEXT")
@@ -157,13 +161,11 @@ def carregar_historico_obd2():
     return df
 
 def diagnostico_avancado_obd2(codigo, montadora="", modelo="", ano=""):
-    """Busca na web e usa a IA do HF para gerar um laudo comparativo e profundo."""
     query = f"OBD2 code {codigo}"
     if montadora: query += f" {montadora}"
     if modelo: query += f" {modelo}"
     query += " symptoms causes repair manual"
     
-    # 1. Captura contexto bruto da internet
     search_results = ""
     try:
         with DDGS() as ddgs:
@@ -172,23 +174,20 @@ def diagnostico_avancado_obd2(codigo, montadora="", modelo="", ano=""):
     except Exception:
         search_results = "(Busca na web indisponível no momento. Use apenas sua base de conhecimento interna.)"
         
-    # 2. Pede para a IA processar a internet + cérebro dela
     prompt_ia = f"""
-    Você é um Engenheiro de Diagnóstico Automotivo Avançado.
-    O usuário precisa saber TUDO sobre o código de falha OBD-II: **{codigo}**.
-    Contexto do veículo informado: Montadora: {montadora or 'Qualquer'} | Modelo: {modelo or 'Qualquer'} | Ano: {ano or 'Qualquer'}.
+    Aja como o 'Chip', um Mecânico Chefe Sênior experiente. O usuário precisa de um laudo TÉCNICO COMPLETO sobre a falha OBD-II: **{codigo}**.
+    Contexto: Montadora: {montadora or 'Qualquer'} | Modelo: {modelo or 'Qualquer'} | Ano: {ano or 'Qualquer'}.
     
-    Resultados encontrados na web agora:
+    Dados cruzados da web agora:
     {search_results}
     
-    Gere um relatório técnico contendo:
-    1. Significado e Descrição Técnica da Falha.
-    2. Se for um código específico de montadora (ex: começados com P1, C1, B1), verifique na sua base de dados se esse mesmo código tem significados DIFERENTES em outras marcas (ex: Scania vs Volvo vs Mercedes) e liste-os!
-    3. Sintomas no veículo.
+    Gere um relatório técnico de chefe de oficina contendo:
+    1. Significado Direto da Falha.
+    2. Aviso Cruzado: Se este código variar o significado entre montadoras (ex: GM vs Volvo), liste essas diferenças!
+    3. Sintomas.
     4. Causas mais prováveis.
-    5. Passos para solução.
-    
-    Responda em Markdown, sendo claro, direto e em Português do Brasil.
+    5. Passos para diagnóstico e solução.
+    Responda em Markdown, com tom profissional, prático e em Português do Brasil.
     """
     
     if HF_TOKEN:
@@ -201,12 +200,12 @@ def diagnostico_avancado_obd2(codigo, montadora="", modelo="", ano=""):
             )
             return completude.choices[0].message.content.strip()
         except Exception as e:
-            return f"⚠️ Falha na IA: {e}\n\n**Dados crus encontrados:**\n{search_results}"
+            return f"⚠️ Falha de comunicação no Scanner: {e}\n\n**Dados cruzados:**\n{search_results}"
     else:
-        return f"**Dados crus encontrados:**\n{search_results}"
+        return f"**Dados crus da internet:**\n{search_results}"
 
 # ==========================================
-# 4. ROTINAS EEPROM
+# 4. ROTINAS EEPROM E ARQUIVOS
 # ==========================================
 def listar_montadoras():
     montadoras = set()
@@ -247,11 +246,19 @@ def buscar_dados_veiculo_unificado(montadora, modelo):
 def buscar_logo_montadora_automatica(montadora):
     if os.path.exists(LOGOS_DIR):
         arquivos = os.listdir(LOGOS_DIR)
-        mont_alvo = higienizar_nome(montadora)
+        mont_alvo = limpar_para_comparacao(montadora)
+        
+        # Tentativa 1: Busca exata ignorando case/simbolos
         for arquivo in arquivos:
-            arq_upper = arquivo.upper()
-            if mont_alvo in arq_upper and arq_upper.endswith(('.PNG', '.WEBP')): return os.path.join(LOGOS_DIR, arquivo)
-            if mont_alvo in arq_upper and arq_upper.endswith(('.JPG', '.JPEG')): return os.path.join(LOGOS_DIR, arquivo)
+            if not arquivo.lower().endswith(('.png', '.jpg', '.jpeg', '.webp')): continue
+            nome_arq = limpar_para_comparacao(arquivo.split('.')[0])
+            if mont_alvo == nome_arq: return os.path.join(LOGOS_DIR, arquivo)
+            
+        # Tentativa 2: Busca por fragmento (ex: "DAF XF" acha "DAF")
+        for arquivo in arquivos:
+            if not arquivo.lower().endswith(('.png', '.jpg', '.jpeg', '.webp')): continue
+            nome_arq = limpar_para_comparacao(arquivo.split('.')[0])
+            if mont_alvo in nome_arq or nome_arq in mont_alvo: return os.path.join(LOGOS_DIR, arquivo)
     return None
 
 def obter_image_base64_html(caminho):
@@ -322,15 +329,15 @@ def obter_resumo_banco_para_ia():
 def processar_linguagem_chip(prompt_cru):
     DADOS_DO_SISTEMA = obter_resumo_banco_para_ia()
     CONTEUDO_DO_SISTEMA = (
-        "Você é o Chip, a IA do HyperTork System. "
-        "Você analisa DADOS OBD-II ou gerencia EEPROM.\n"
-        f"Dados locais: {DADOS_DO_SISTEMA}\n\n"
-        "Se o usuário pedir diagnóstico de um código (ex: P0001 na Volvo), escolha a ação DIAGNOSTICAR_FALHA.\n"
+        "Você é o Chip, a IA do HyperTork System. Aja como um Mecânico Chefe Sênior de oficina pesada: direto, técnico e com linguajar automotivo real. "
+        "Você gerencia mapas de EEPROM e analisa DADOS OBD-II.\n"
+        f"Dados locais da nossa oficina: {DADOS_DO_SISTEMA}\n\n"
+        "Se o usuário pedir diagnóstico de um código (ex: P0001 na Volvo), escolha a ação DIAGNOSTICAR_FALHA e deixe a resposta vazia.\n"
         "Formato JSON EXATO:\n"
         "{\n"
         '  "acao": "CRIAR_MONTADORA" | "CADASTRAR_VEICULO" | "DIAGNOSTICAR_FALHA" | "ANALISAR_RESPONDER",\n'
         '  "parametros": { "codigo": "P0001", "montadora": "NOME", "modelo": "NOME", "ano": "2014" },\n'
-        '  "resposta": "Sua resposta curta (Apenas para comandos EEPROM. Se for DIAGNOSTICAR_FALHA, deixe em branco pois outra função fará o laudo)."\n'
+        '  "resposta": "Sua resposta de Mecânico Chefe (para dúvidas ou confirmação)."\n'
         "}\n"
     )
     
@@ -348,7 +355,7 @@ def processar_linguagem_chip(prompt_cru):
             
             acao = dados.get("acao", "ANALISAR_RESPONDER")
             params = dados.get("parametros", {})
-            texto_base = dados.get("resposta", "Análise concluída!")
+            texto_base = dados.get("resposta", "Entendido, chefe!")
             
             if acao == "DIAGNOSTICAR_FALHA" and params.get("codigo"):
                 cod = params.get("codigo")
@@ -357,7 +364,7 @@ def processar_linguagem_chip(prompt_cru):
                 ano = params.get("ano", "")
                 laudo = diagnostico_avancado_obd2(cod, mont, mod, ano)
                 salvar_pesquisa_obd2(cod, mont, mod, ano, laudo)
-                return f"🔍 **Laudo de Falha Solicitado via Chip:**\n\n{laudo}"
+                return f"🔧 **Laudo de Falha do Chefe:**\n\n{laudo}"
                 
             elif acao == "CRIAR_MONTADORA" and params.get("montadora"):
                 m = higienizar_nome(params["montadora"])
@@ -371,7 +378,7 @@ def processar_linguagem_chip(prompt_cru):
         except Exception:
             pass 
 
-    return "🤖 Olá! Estou com minha rede principal ocupada, mas pode explorar o sistema usando os painéis."
+    return "🤖 Opa chefe, o servidor da matriz deu uma engasgada. Use os painéis ali do lado enquanto eu reinicio os módulos!"
 
 @st.dialog("🔍 Visualizador de Mapa Ampliado", width="large")
 def abrir_modal_zoom(foto_bytes, legenda_titulo):
@@ -381,42 +388,14 @@ def abrir_modal_zoom(foto_bytes, legenda_titulo):
     if st.button("❌ Fechar Visualização", use_container_width=True): st.rerun()
 
 # ==========================================
-# 6. ESTILIZAÇÃO CSS AVANÇADA E ESTADO
+# 6. ESTILIZAÇÃO E CONTROLE DE ESTADO
 # ==========================================
 st.markdown("""
     <style>
-    /* Trava a tela para não tremer */
+    /* Estabilidade de Tela */
     html { overflow-y: scroll !important; }
     .block-container { padding-top: 2rem; }
-    
-    /* Botões Gigantes da Tela Inicial usando CSS nos st.button nativos */
-    div[data-testid="stButton"] button.hub-btn-eeprom {
-        height: 250px !important;
-        background: linear-gradient(145deg, #1E88E5, #1565C0) !important;
-        color: white !important;
-        font-size: 1.5rem !important;
-        border-radius: 20px !important;
-        border: none !important;
-        transition: transform 0.2s, box-shadow 0.2s !important;
-    }
-    div[data-testid="stButton"] button.hub-btn-eeprom:hover {
-        transform: translateY(-5px);
-        box-shadow: 0 12px 24px rgba(0,0,0,0.4) !important;
-    }
-    
-    div[data-testid="stButton"] button.hub-btn-obd {
-        height: 250px !important;
-        background: linear-gradient(145deg, #E53935, #C62828) !important;
-        color: white !important;
-        font-size: 1.5rem !important;
-        border-radius: 20px !important;
-        border: none !important;
-        transition: transform 0.2s, box-shadow 0.2s !important;
-    }
-    div[data-testid="stButton"] button.hub-btn-obd:hover {
-        transform: translateY(-5px);
-        box-shadow: 0 12px 24px rgba(0,0,0,0.4) !important;
-    }
+    div[data-testid="stColumn"] { min-width: 0 !important; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -425,7 +404,7 @@ if 'app_mode' not in st.session_state:
 if 'montadora_selecionada' not in st.session_state:
     st.session_state.montadora_selecionada = ""
 if 'chat_historico' not in st.session_state:
-    st.session_state.chat_historico = [{"role": "assistant", "content": "🤖 Bem-vindo ao Hub! Posso gerenciar mapas EEPROM ou gerar laudos OBD-II detalhados. Como posso ajudar?"}]
+    st.session_state.chat_historico = [{"role": "assistant", "content": "🔧 Fala chefe! Aqui é o Chip. Posso gerenciar os mapas EEPROM nas baias ou puxar um laudo OBD-II completo. Manda a bronca!"}]
 
 # ==========================================
 # 7. BARRA LATERAL GERAL
@@ -438,17 +417,17 @@ if st.session_state.app_mode != "HOME":
         st.rerun()
     st.sidebar.markdown("---")
 
-st.sidebar.markdown("🤖 **Chip - Assistente Integrado**")
+st.sidebar.markdown("🤖 **Chip - Mecânico Chefe IA**")
 for mensagem in st.session_state.chat_historico:
     with st.sidebar.chat_message(mensagem["role"]): st.markdown(mensagem["content"])
 
-if prompt := st.sidebar.chat_input("Diga um comando ou peça laudo de falha..."):
+if prompt := st.sidebar.chat_input("Diga um comando ou peça um laudo de falha..."):
     st.session_state.chat_historico.append({"role": "user", "content": prompt})
     if prompt.strip().lower() in ["/limpar", "limpar chat"]:
-        st.session_state.chat_historico = [{"role": "assistant", "content": "Visão redefinida!"}]
+        st.session_state.chat_historico = [{"role": "assistant", "content": "Oficina limpa, chefe!"}]
         st.rerun()
     else:
-        with st.spinner("Analisando..."):
+        with st.spinner("Analisando esquemas elétricos e manuais..."):
             resposta = processar_linguagem_chip(prompt)
         st.session_state.chat_historico.append({"role": "assistant", "content": resposta})
         st.rerun()
@@ -461,43 +440,60 @@ montadoras_existentes = listar_montadoras()
 if st.session_state.app_mode == "HOME":
     st.markdown("<h1 style='text-align: center; margin-bottom: 50px;'>HyperTork System Hub</h1>", unsafe_allow_html=True)
     
-    # Injetando classes CSS via marcação no HTML renderizado pelo Streamlit
-    st.markdown('<div class="hub-container">', unsafe_allow_html=True)
+    # CSS Injetado EXCLUSIVAMENTE para a Home Page (Botões gigantes Nintendo Switch)
+    st.markdown("""
+        <style>
+        div[data-testid="column"]:nth-of-type(1) div[data-testid="stButton"] button {
+            background: linear-gradient(145deg, #1E88E5, #1565C0) !important;
+            height: 250px !important;
+            border-radius: 20px !important;
+            color: white !important;
+            border: none !important;
+            transition: transform 0.2s, box-shadow 0.2s !important;
+        }
+        div[data-testid="column"]:nth-of-type(1) div[data-testid="stButton"] button:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 12px 24px rgba(0,0,0,0.4) !important;
+        }
+        div[data-testid="column"]:nth-of-type(2) div[data-testid="stButton"] button {
+            background: linear-gradient(145deg, #E53935, #C62828) !important;
+            height: 250px !important;
+            border-radius: 20px !important;
+            color: white !important;
+            border: none !important;
+            transition: transform 0.2s, box-shadow 0.2s !important;
+        }
+        div[data-testid="column"]:nth-of-type(2) div[data-testid="stButton"] button:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 12px 24px rgba(0,0,0,0.4) !important;
+        }
+        div[data-testid="stButton"] button p {
+            font-size: 1.3rem !important;
+            white-space: pre-wrap !important;
+            text-align: center !important;
+            line-height: 1.5 !important;
+        }
+        </style>
+    """, unsafe_allow_html=True)
+    
     col1, col2 = st.columns(2)
     with col1:
-        st.markdown('<style>div:nth-child(1) > div > div > div > button { @extend .hub-btn-eeprom; }</style>', unsafe_allow_html=True)
-        if st.button("⚙️ GRÁFICOS EEPROM\n\nGerenciamento de banco de dados, mapas hexadecimais e escalas.", key="btn_eeprom", use_container_width=True):
+        # Usando um único botão do Streamlit, mas com quebras de linha para texto rico
+        if st.button("⚙️\n\n**Gráficos EEPROM**\n\nGerenciamento de banco de dados, mapas hexadecimais e escalas.", use_container_width=True):
             st.session_state.app_mode = "EEPROM"
             st.rerun()
             
     with col2:
-        st.markdown('<style>div:nth-child(2) > div > div > div > button { @extend .hub-btn-obd; }</style>', unsafe_allow_html=True)
-        if st.button("🚗 CÓDIGOS DE FALHA\n\nDiagnóstico IA, Busca de falhas cruzadas e Histórico.", key="btn_obd", use_container_width=True):
+        if st.button("🚗\n\n**Códigos de Falha**\n\nDiagnóstico IA, Busca de falhas cruzadas e Histórico.", use_container_width=True):
             st.session_state.app_mode = "OBD2"
             st.rerun()
-    st.markdown('</div>', unsafe_allow_html=True)
-    
-    # Gambiarra de CSS para forçar a cor e o tamanho baseando na chave (key) do botão
-    st.markdown("""
-        <style>
-        button[kind="secondary"]:has(div:contains("GRÁFICOS EEPROM")) {
-            height: 250px !important; background: linear-gradient(145deg, #1E88E5, #1565C0) !important; color: white !important; font-size: 1.5rem !important; border-radius: 20px !important; border: none !important;
-        }
-        button[kind="secondary"]:has(div:contains("GRÁFICOS EEPROM")):hover { transform: translateY(-5px); box-shadow: 0 12px 24px rgba(0,0,0,0.4) !important; color: white !important; }
-        
-        button[kind="secondary"]:has(div:contains("CÓDIGOS DE FALHA")) {
-            height: 250px !important; background: linear-gradient(145deg, #E53935, #C62828) !important; color: white !important; font-size: 1.5rem !important; border-radius: 20px !important; border: none !important;
-        }
-        button[kind="secondary"]:has(div:contains("CÓDIGOS DE FALHA")):hover { transform: translateY(-5px); box-shadow: 0 12px 24px rgba(0,0,0,0.4) !important; color: white !important;}
-        </style>
-    """, unsafe_allow_html=True)
 
 # ------------------------------------------
 # TELA 1: OBD-II AI SCANNER (AVANÇADO)
 # ------------------------------------------
 elif st.session_state.app_mode == "OBD2":
     st.title("🚗 Diagnóstico de Falhas OBD-II")
-    st.markdown("Identifique problemas no seu veículo com uma análise RAG profunda cruzando informações da web.")
+    st.markdown("Identifique problemas no seu veículo com uma análise RAG profunda cruzando manuais de oficina e da web.")
     
     with st.container(border=True):
         col_cod, col_mont, col_mod, col_ano = st.columns([2, 2, 2, 1])
@@ -510,7 +506,7 @@ elif st.session_state.app_mode == "OBD2":
         with col_ano:
             ano_input = st.text_input("Ano (Opcional)", placeholder="Ex: 2014").strip()
             
-        btn_buscar = st.button("🔍 Iniciar Diagnóstico de IA", use_container_width=True, type="primary")
+        btn_buscar = st.button("🔍 Iniciar Diagnóstico do Chefe", use_container_width=True, type="primary")
             
     if btn_buscar:
         if codigo_input:
@@ -521,7 +517,7 @@ elif st.session_state.app_mode == "OBD2":
                 salvar_pesquisa_obd2(codigo_input, mont_input, mod_input, ano_input, descricao_encontrada)
                 st.success("✅ Diagnóstico salvo no histórico da nuvem!")
         else:
-            st.warning("O código da falha é obrigatório para iniciar a busca.")
+            st.warning("O código da falha é obrigatório para iniciar o diagnóstico.")
             
     st.divider()
     st.subheader("📚 Histórico de Pesquisas")
@@ -532,7 +528,7 @@ elif st.session_state.app_mode == "OBD2":
         st.write("Nenhum código foi pesquisado ainda.")
 
 # ------------------------------------------
-# TELA 2: GESTÃO EEPROM (Layout Corrigido)
+# TELA 2: GESTÃO EEPROM (Layout Estabilizado)
 # ------------------------------------------
 elif st.session_state.app_mode == "EEPROM":
     if st.session_state.montadora_selecionada == "":
@@ -596,7 +592,6 @@ elif st.session_state.app_mode == "EEPROM":
                 st.markdown(f"#### 📍 Mapa: {st.session_state.montadora_selecionada} {escolha_modelo}")
                 dados_mapa = buscar_dados_veiculo_unificado(st.session_state.montadora_selecionada, escolha_modelo)
 
-                # Layout refeito para corrigir o vazamento de coluna
                 col_info, col_img = st.columns([1, 2])
                 
                 with col_info:
