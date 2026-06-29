@@ -1,6 +1,4 @@
-rembg
 streamlit
-sqlite3
 pillow
 huggingface_hub
 pandas
