@@ -383,90 +383,71 @@ def abrir_modal_zoom(foto_bytes, legenda_titulo):
     if st.button("❌ Fechar Visualização", use_container_width=True): st.rerun()
 
 # ==========================================
-# 6. ESTILIZAÇÃO CSS AVANÇADA (A Mágica)
+# 6. ESTILIZAÇÃO CSS E RESPONSIVIDADE
 # ==========================================
 st.markdown("""
     <style>
-    /* Estabilidade de Tela */
+    /* Estabilidade de Tela para Celulares e PCs */
     html { overflow-y: scroll !important; }
-    .block-container { padding-top: 2rem; }
+    .block-container { padding-top: 2rem; max-width: 1200px; }
     
     /* -----------------------------------------------------------
-       BOTÕES GIGANTES DA TELA INICIAL (Nintendo Switch Style)
+       ESTILIZAÇÃO DO CHIP (BOTÃO LARANJA FLUTUANTE)
     ----------------------------------------------------------- */
-    /* Botão Azul: Gráficos EEPROM */
-    div[data-testid="stVerticalBlock"]:has(.home-screen-marker) div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"]:nth-child(1) div[data-testid="stButton"] button {
-        background: linear-gradient(145deg, #1E88E5, #1565C0) !important;
-        height: 250px !important;
-        border-radius: 20px !important;
-        color: white !important;
-        border: none !important;
-        transition: transform 0.2s, box-shadow 0.2s !important;
-        width: 100% !important;
-    }
-    div[data-testid="stVerticalBlock"]:has(.home-screen-marker) div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"]:nth-child(1) div[data-testid="stButton"] button:hover {
-        transform: translateY(-5px) !important;
-        box-shadow: 0 12px 24px rgba(0,0,0,0.4) !important;
-    }
-    
-    /* Botão Vermelho: Códigos OBD2 */
-    div[data-testid="stVerticalBlock"]:has(.home-screen-marker) div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"]:nth-child(2) div[data-testid="stButton"] button {
-        background: linear-gradient(145deg, #E53935, #C62828) !important;
-        height: 250px !important;
-        border-radius: 20px !important;
-        color: white !important;
-        border: none !important;
-        transition: transform 0.2s, box-shadow 0.2s !important;
-        width: 100% !important;
-    }
-    div[data-testid="stVerticalBlock"]:has(.home-screen-marker) div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"]:nth-child(2) div[data-testid="stButton"] button:hover {
-        transform: translateY(-5px) !important;
-        box-shadow: 0 12px 24px rgba(0,0,0,0.4) !important;
-    }
-    
-    /* Texto de dentro dos botões */
-    div[data-testid="stVerticalBlock"]:has(.home-screen-marker) div[data-testid="stButton"] button p {
-        font-size: 1.4rem !important;
-        white-space: pre-wrap !important;
-        text-align: center !important;
-        line-height: 1.4 !important;
-    }
-
-    /* -----------------------------------------------------------
-       POP-UP FLUTUANTE DO CHIP (O Círculo Laranja no canto)
-    ----------------------------------------------------------- */
+    /* Trava o container do botão exatamente no canto */
     div[data-testid="stPopover"] {
         position: fixed !important;
         bottom: 30px !important;
         right: 30px !important;
         z-index: 999999 !important;
-        width: 70px !important;
-        height: 70px !important;
     }
     
-    div[data-testid="stPopover"] > button {
+    /* Pinta APENAS o botão redondo de abrir o popover de laranja */
+    div[data-testid="stPopover"] > button, 
+    div[data-testid="stPopover"] > div > button {
         background-color: #FF8C00 !important;
+        border: 2px solid #E67E22 !important;
         border-radius: 50% !important;
-        width: 100% !important;
-        height: 100% !important;
-        border: none !important;
-        box-shadow: 0 8px 16px rgba(0,0,0,0.3) !important;
+        width: 65px !important;
+        height: 65px !important;
+        min-width: 65px !important;
+        min-height: 65px !important;
+        box-shadow: 0 8px 16px rgba(255, 140, 0, 0.4) !important;
         transition: transform 0.2s !important;
         padding: 0 !important;
     }
-    div[data-testid="stPopover"] > button:hover {
+    div[data-testid="stPopover"] > button:hover,
+    div[data-testid="stPopover"] > div > button:hover {
         transform: scale(1.1) !important;
-        background-color: #E67E22 !important;
     }
-    div[data-testid="stPopover"] > button p {
-        font-size: 35px !important;
-        margin: 0 !important;
-        padding: 0 !important;
+    /* Aumenta o emoji do robô no botão laranja */
+    div[data-testid="stPopover"] > button p, 
+    div[data-testid="stPopover"] > div > button p {
+        font-size: 30px !important;
         line-height: 1 !important;
     }
     
+    /* Reseta os botões de dentro da caixinha (como o botão Enviar) para não ficarem redondos/laranjas */
+    div[data-testid="stPopoverBody"] button {
+        background-color: transparent !important;
+        border: 1px solid #ddd !important;
+        border-radius: 8px !important;
+        width: auto !important;
+        height: auto !important;
+        min-width: 0 !important;
+        min-height: 0 !important;
+        box-shadow: none !important;
+    }
+    div[data-testid="stPopoverBody"] div[data-testid="stForm"] button {
+        background-color: #1E88E5 !important;
+        color: white !important;
+        border: none !important;
+    }
+
+    /* Responsividade do Painel de Chat do Chip (ajusta pro celular) */
     div[data-testid="stPopoverBody"] {
-        width: 350px !important;
+        width: 90vw !important;
+        max-width: 380px !important;
         border-radius: 15px !important;
         box-shadow: 0 10px 30px rgba(0,0,0,0.3) !important;
         padding: 1rem !important;
@@ -482,7 +463,7 @@ if 'chat_historico' not in st.session_state:
     st.session_state.chat_historico = [{"role": "assistant", "content": "Oi! Eu sou o Chip, como posso ajudar?"}]
 
 # ==========================================
-# 7. BARRA LATERAL E INICIALIZAÇÃO DE DADOS
+# 7. BARRA LATERAL (Apenas Navegação)
 # ==========================================
 st.sidebar.title("🛡️ HyperTork Hub")
 if st.session_state.app_mode != "HOME":
@@ -493,7 +474,6 @@ if st.session_state.app_mode != "HOME":
 else:
     st.sidebar.info("📌 Escolha uma das ferramentas ao lado.")
 
-# Carrega a lista global de montadoras para evitar o NameError
 montadoras_existentes = listar_montadoras()
 
 # ==========================================
@@ -502,7 +482,52 @@ montadoras_existentes = listar_montadoras()
 if st.session_state.app_mode == "HOME":
     st.markdown("<h1 style='text-align: center; margin-bottom: 50px;'>HyperTork System Hub</h1>", unsafe_allow_html=True)
     
-    st.markdown('<div class="home-screen-marker"></div>', unsafe_allow_html=True)
+    # CSS Injetado EXCLUSIVAMENTE quando estamos na Home.
+    # Sem usar `:has()` para garantir que funciona em navegadores antigos e celulares!
+    st.markdown("""
+        <style>
+        /* Pega os dois primeiros botões que aparecem na tela (que são os botões gigantes da Home) */
+        div[data-testid="stHorizontalBlock"] div[data-testid="column"]:nth-child(1) button {
+            background: linear-gradient(145deg, #1E88E5, #1565C0) !important;
+            min-height: 200px !important;
+            height: auto !important;
+            border-radius: 20px !important;
+            color: white !important;
+            border: none !important;
+            transition: transform 0.2s, box-shadow 0.2s !important;
+            width: 100% !important;
+            padding: 20px !important;
+        }
+        div[data-testid="stHorizontalBlock"] div[data-testid="column"]:nth-child(1) button:hover {
+            transform: translateY(-5px) !important;
+            box-shadow: 0 12px 24px rgba(0,0,0,0.4) !important;
+        }
+        
+        div[data-testid="stHorizontalBlock"] div[data-testid="column"]:nth-child(2) button {
+            background: linear-gradient(145deg, #E53935, #C62828) !important;
+            min-height: 200px !important;
+            height: auto !important;
+            border-radius: 20px !important;
+            color: white !important;
+            border: none !important;
+            transition: transform 0.2s, box-shadow 0.2s !important;
+            width: 100% !important;
+            padding: 20px !important;
+        }
+        div[data-testid="stHorizontalBlock"] div[data-testid="column"]:nth-child(2) button:hover {
+            transform: translateY(-5px) !important;
+            box-shadow: 0 12px 24px rgba(0,0,0,0.4) !important;
+        }
+        
+        /* Centraliza o texto e permite quebra de linha natural no celular */
+        div[data-testid="stHorizontalBlock"] button p {
+            font-size: 1.3rem !important;
+            white-space: pre-wrap !important;
+            text-align: center !important;
+            line-height: 1.5 !important;
+        }
+        </style>
+    """, unsafe_allow_html=True)
     
     col1, col2 = st.columns(2)
     with col1:
@@ -798,11 +823,13 @@ with st.popover("🤖"):
             with st.chat_message(msg["role"]):
                 st.markdown(msg["content"])
                 
-    # O form evita que o popup se feche sozinho ao digitar
     with st.form("chip_chat_form", clear_on_submit=True):
-        cols = st.columns([4, 1])
-        prompt = cols[0].text_input("Mensagem", label_visibility="collapsed", placeholder="Digite algo...")
-        submit = cols[1].form_submit_button("Enviar")
+        # Usando proporção 70/30 para dar espaço ao botão "Enviar" no celular
+        cols = st.columns([7, 3])
+        with cols[0]:
+            prompt = st.text_input("Mensagem", label_visibility="collapsed", placeholder="Digite algo...")
+        with cols[1]:
+            submit = st.form_submit_button("Enviar", use_container_width=True)
         
         if submit and prompt.strip():
             if prompt.strip().lower() in ["/limpar", "limpar chat"]:
