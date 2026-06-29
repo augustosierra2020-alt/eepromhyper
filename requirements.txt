@@ -1,5 +1,7 @@
 rembg
 streamlit
-Pillow
-python-docx
+sqlite3
+pillow
 huggingface_hub
+pandas
+duckduckgo-search
