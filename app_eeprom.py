@@ -247,12 +247,14 @@ def buscar_logo_montadora_automatica(montadora):
         arquivos = os.listdir(LOGOS_DIR)
         mont_alvo = limpar_para_comparacao(montadora)
         for arquivo in arquivos:
-            if not arquivo.lower().endswith(('.png', '.jpg', '.jpeg', '.webp')): continue
+            # Ampliada a lista de extensões aceitas, incluindo variações de case (embora lower() já resolva)
+            if not arquivo.lower().endswith(('.png', '.jpg', '.jpeg', '.webp', '.gif')): continue
             nome_arq = limpar_para_comparacao(arquivo.split('.')[0])
             if mont_alvo == nome_arq: return os.path.join(LOGOS_DIR, arquivo)
         for arquivo in arquivos:
-            if not arquivo.lower().endswith(('.png', '.jpg', '.jpeg', '.webp')): continue
+            if not arquivo.lower().endswith(('.png', '.jpg', '.jpeg', '.webp', '.gif')): continue
             nome_arq = limpar_para_comparacao(arquivo.split('.')[0])
+            # Busca mais permissiva para encontrar a logo
             if mont_alvo in nome_arq or nome_arq in mont_alvo: return os.path.join(LOGOS_DIR, arquivo)
     return None
 
@@ -387,22 +389,65 @@ def abrir_modal_zoom(foto_bytes, legenda_titulo):
 # ==========================================
 st.markdown("""
     <style>
-    /* Estabilidade de Tela para Celulares e PCs */
-    html { overflow-y: scroll !important; }
+    /* Estabilidade de Tela e Correções Gerais */
+    html, body, [class*="css"]  { overflow-x: hidden; }
     .block-container { padding-top: 2rem; max-width: 1200px; }
     
     /* -----------------------------------------------------------
-       ESTILIZAÇÃO DO CHIP (BOTÃO LARANJA FLUTUANTE)
+       ESTILIZAÇÃO DOS BOTÕES GIGANTES (HTML PURO)
     ----------------------------------------------------------- */
-    /* Trava o container do botão exatamente no canto */
-    div[data-testid="stPopover"] {
-        position: fixed !important;
-        bottom: 30px !important;
-        right: 30px !important;
-        z-index: 999999 !important;
+    /* Remove a decoração do link no HTML e aplica estilos de botão */
+    .big-hub-btn-link {
+        text-decoration: none !important;
+        display: block !important;
+        width: 100% !important;
     }
     
-    /* Pinta APENAS o botão redondo de abrir o popover de laranja */
+    .big-hub-btn {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        min-height: 220px;
+        color: white;
+        border-radius: 20px;
+        box-shadow: 0 8px 16px rgba(0,0,0,0.2);
+        cursor: pointer;
+        transition: transform 0.2s, box-shadow 0.2s;
+        text-align: center;
+        padding: 20px;
+        margin-bottom: 20px;
+    }
+    
+    .btn-blue { background: linear-gradient(145deg, #1E88E5, #1565C0); }
+    .btn-red { background: linear-gradient(145deg, #E53935, #C62828); }
+    
+    .big-hub-btn:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 12px 24px rgba(0,0,0,0.4);
+    }
+    
+    .big-hub-btn h2 { color: white !important; margin: 10px 0 !important; font-weight: bold; font-size: 1.8rem;}
+    .big-hub-btn p { color: #E3F2FD !important; font-size: 1.1rem !important; margin: 0;}
+    .big-hub-btn span { font-size: 3rem; }
+
+    /* -----------------------------------------------------------
+       ESTILIZAÇÃO DO CHIP (BOTÃO LARANJA FLUTUANTE)
+    ----------------------------------------------------------- */
+    /* Garante que o popover fique fixo no canto inferior direito, sem cortar */
+    div[data-testid="stPopover"] {
+        position: fixed !important;
+        bottom: 20px !important;
+        right: 20px !important;
+        z-index: 999999 !important;
+        width: 70px !important;
+        height: 70px !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+    }
+    
+    /* Estiliza o botão gatilho do popover para ser uma bolinha laranja perfeita */
     div[data-testid="stPopover"] > button, 
     div[data-testid="stPopover"] > div > button {
         background-color: #FF8C00 !important;
@@ -415,19 +460,26 @@ st.markdown("""
         box-shadow: 0 8px 16px rgba(255, 140, 0, 0.4) !important;
         transition: transform 0.2s !important;
         padding: 0 !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
     }
+    
     div[data-testid="stPopover"] > button:hover,
     div[data-testid="stPopover"] > div > button:hover {
         transform: scale(1.1) !important;
     }
-    /* Aumenta o emoji do robô no botão laranja */
+    
+    /* Centraliza o emoji dentro do botão laranja */
     div[data-testid="stPopover"] > button p, 
     div[data-testid="stPopover"] > div > button p {
-        font-size: 30px !important;
+        font-size: 32px !important;
         line-height: 1 !important;
+        margin: 0 !important;
+        display: block !important;
     }
     
-    /* Reseta os botões de dentro da caixinha (como o botão Enviar) para não ficarem redondos/laranjas */
+    /* Reseta os botões de dentro da caixinha (para não ficarem redondos/laranjas) */
     div[data-testid="stPopoverBody"] button {
         background-color: transparent !important;
         border: 1px solid #ddd !important;
@@ -451,23 +503,36 @@ st.markdown("""
         border-radius: 15px !important;
         box-shadow: 0 10px 30px rgba(0,0,0,0.3) !important;
         padding: 1rem !important;
+        /* Garante que o corpo do popover não saia da tela */
+        position: fixed !important;
+        right: 20px !important;
+        bottom: 100px !important;
+        top: auto !important;
+        left: auto !important;
+        transform: none !important;
     }
     </style>
 """, unsafe_allow_html=True)
 
-if 'app_mode' not in st.session_state:
+# Lógica de Roteamento baseada em Parâmetros de URL
+params = st.query_params
+if "page" in params:
+    st.session_state.app_mode = params["page"]
+elif 'app_mode' not in st.session_state:
     st.session_state.app_mode = "HOME"
+
 if 'montadora_selecionada' not in st.session_state:
     st.session_state.montadora_selecionada = ""
 if 'chat_historico' not in st.session_state:
     st.session_state.chat_historico = [{"role": "assistant", "content": "Oi! Eu sou o Chip, como posso ajudar?"}]
 
 # ==========================================
-# 7. BARRA LATERAL (Apenas Navegação)
+# 7. BARRA LATERAL E NAVEGAÇÃO
 # ==========================================
 st.sidebar.title("🛡️ HyperTork Hub")
 if st.session_state.app_mode != "HOME":
     if st.sidebar.button("🎮 Voltar ao Menu Principal", use_container_width=True, type="primary"):
+        st.query_params.clear()
         st.session_state.app_mode = "HOME"
         st.session_state.montadora_selecionada = ""
         st.rerun()
@@ -482,66 +547,32 @@ montadoras_existentes = listar_montadoras()
 if st.session_state.app_mode == "HOME":
     st.markdown("<h1 style='text-align: center; margin-bottom: 50px;'>HyperTork System Hub</h1>", unsafe_allow_html=True)
     
-    # CSS Injetado EXCLUSIVAMENTE quando estamos na Home.
-    # Sem usar `:has()` para garantir que funciona em navegadores antigos e celulares!
-    st.markdown("""
-        <style>
-        /* Pega os dois primeiros botões que aparecem na tela (que são os botões gigantes da Home) */
-        div[data-testid="stHorizontalBlock"] div[data-testid="column"]:nth-child(1) button {
-            background: linear-gradient(145deg, #1E88E5, #1565C0) !important;
-            min-height: 200px !important;
-            height: auto !important;
-            border-radius: 20px !important;
-            color: white !important;
-            border: none !important;
-            transition: transform 0.2s, box-shadow 0.2s !important;
-            width: 100% !important;
-            padding: 20px !important;
-        }
-        div[data-testid="stHorizontalBlock"] div[data-testid="column"]:nth-child(1) button:hover {
-            transform: translateY(-5px) !important;
-            box-shadow: 0 12px 24px rgba(0,0,0,0.4) !important;
-        }
-        
-        div[data-testid="stHorizontalBlock"] div[data-testid="column"]:nth-child(2) button {
-            background: linear-gradient(145deg, #E53935, #C62828) !important;
-            min-height: 200px !important;
-            height: auto !important;
-            border-radius: 20px !important;
-            color: white !important;
-            border: none !important;
-            transition: transform 0.2s, box-shadow 0.2s !important;
-            width: 100% !important;
-            padding: 20px !important;
-        }
-        div[data-testid="stHorizontalBlock"] div[data-testid="column"]:nth-child(2) button:hover {
-            transform: translateY(-5px) !important;
-            box-shadow: 0 12px 24px rgba(0,0,0,0.4) !important;
-        }
-        
-        /* Centraliza o texto e permite quebra de linha natural no celular */
-        div[data-testid="stHorizontalBlock"] button p {
-            font-size: 1.3rem !important;
-            white-space: pre-wrap !important;
-            text-align: center !important;
-            line-height: 1.5 !important;
-        }
-        </style>
-    """, unsafe_allow_html=True)
-    
     col1, col2 = st.columns(2)
     with col1:
-        if st.button("⚙️\n\n**Gráficos EEPROM**\n\nGerenciamento de banco de dados, mapas hexadecimais e escalas.", use_container_width=True):
-            st.session_state.app_mode = "EEPROM"
-            st.rerun()
+        # Usando HTML puro envelopado em um link com query_param
+        st.markdown(f"""
+            <a href="?page=EEPROM" class="big-hub-btn-link" target="_self">
+                <div class="big-hub-btn btn-blue">
+                    <span>⚙️</span>
+                    <h2>Gráficos EEPROM</h2>
+                    <p>Gerenciamento de banco de dados, mapas hexadecimais e escalas.</p>
+                </div>
+            </a>
+        """, unsafe_allow_html=True)
             
     with col2:
-        if st.button("🚗\n\n**Códigos de Falha**\n\nDiagnóstico IA, Busca de falhas cruzadas e Histórico.", use_container_width=True):
-            st.session_state.app_mode = "OBD2"
-            st.rerun()
+        st.markdown(f"""
+            <a href="?page=OBD2" class="big-hub-btn-link" target="_self">
+                <div class="big-hub-btn btn-red">
+                    <span>🚗</span>
+                    <h2>Códigos de Falha</h2>
+                    <p>Diagnóstico IA, Busca de falhas cruzadas e Histórico.</p>
+                </div>
+            </a>
+        """, unsafe_allow_html=True)
 
 # ------------------------------------------
-# TELA 1: OBD-II AI SCANNER (AVANÇADO)
+# TELA 1: OBD-II AI SCANNER
 # ------------------------------------------
 elif st.session_state.app_mode == "OBD2":
     st.title("🚗 Diagnóstico de Falhas OBD-II")
@@ -824,7 +855,6 @@ with st.popover("🤖"):
                 st.markdown(msg["content"])
                 
     with st.form("chip_chat_form", clear_on_submit=True):
-        # Usando proporção 70/30 para dar espaço ao botão "Enviar" no celular
         cols = st.columns([7, 3])
         with cols[0]:
             prompt = st.text_input("Mensagem", label_visibility="collapsed", placeholder="Digite algo...")
