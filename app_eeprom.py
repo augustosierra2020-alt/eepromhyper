@@ -253,11 +253,14 @@ def buscar_logo_montadora_automatica(montadora):
         mont_alvo = limpar_para_comparacao(montadora)
         for arquivo in arquivos:
             if not arquivo.lower().endswith(('.png', '.jpg', '.jpeg', '.webp', '.gif')): continue
-            nome_arq = limpar_para_comparacao(arquivo.split('.')[0])
+            # Agora extrai o nome base garantindo que não corte em pontos extras (ex: volvo.logo.png)
+            nome_base = os.path.splitext(arquivo)[0]
+            nome_arq = limpar_para_comparacao(nome_base)
             if mont_alvo == nome_arq: return os.path.join(LOGOS_DIR, arquivo)
         for arquivo in arquivos:
             if not arquivo.lower().endswith(('.png', '.jpg', '.jpeg', '.webp', '.gif')): continue
-            nome_arq = limpar_para_comparacao(arquivo.split('.')[0])
+            nome_base = os.path.splitext(arquivo)[0]
+            nome_arq = limpar_para_comparacao(nome_base)
             if mont_alvo in nome_arq or nome_arq in mont_alvo: return os.path.join(LOGOS_DIR, arquivo)
     return None
 
@@ -532,7 +535,7 @@ st.markdown("""
     
     .btn-blue { background: linear-gradient(145deg, #1E88E5, #1565C0); }
     .btn-red { background: linear-gradient(145deg, #E53935, #C62828); }
-    .btn-green { background: linear-gradient(145deg, #43A047, #2E7D32); } /* Novo botão OS */
+    .btn-green { background: linear-gradient(145deg, #43A047, #2E7D32); }
     
     .big-hub-btn:hover {
         transform: translateY(-5px);
@@ -655,7 +658,6 @@ montadoras_existentes = listar_montadoras()
 if st.session_state.app_mode == "HOME":
     st.markdown("<h1 style='text-align: center; margin-bottom: 50px;'>HyperTork System Hub</h1>", unsafe_allow_html=True)
     
-    # Adicionado um layout de 3 colunas para acomodar o novo sistema!
     col1, col2, col3 = st.columns(3)
     with col1:
         st.markdown(f"""
@@ -748,9 +750,10 @@ elif st.session_state.app_mode == "EEPROM":
                         if caminho_logo:
                             logo_html_src = obter_image_base64_html(caminho_logo)
                             if logo_html_src:
+                                # Correção do fundo branco! Background agora é transparente.
                                 st.markdown(f"""
                                     <div style="display: flex; justify-content: center; align-items: center; 
-                                                background-color: #FFFFFF; padding: 10px; border-radius: 8px; 
+                                                background-color: transparent; padding: 10px; border-radius: 8px; 
                                                 height: 110px; width: 100%; box-sizing: border-box; margin-bottom: 6px;">
                                         <img src="{logo_html_src}" style="max-height: 90px; max-width: 100%; object-fit: contain;">
                                     </div>
@@ -771,9 +774,10 @@ elif st.session_state.app_mode == "EEPROM":
             if caminho_da_logo:
                 logo_html_src = obter_image_base64_html(caminho_da_logo)
                 if logo_html_src:
+                    # Correção do fundo transparente no cabeçalho interno da marca
                     st.markdown(f"""
                         <div style="display: flex; justify-content: center; align-items: center; 
-                                    background-color: #FFFFFF; padding: 6px; border-radius: 8px; height: 75px; width: 75px; box-sizing: border-box;">
+                                    background-color: transparent; padding: 6px; border-radius: 8px; height: 75px; width: 75px; box-sizing: border-box;">
                             <img src="{logo_html_src}" style="max-height: 60px; max-width: 100%; object-fit: contain;">
                         </div>
                     """, unsafe_allow_html=True)
