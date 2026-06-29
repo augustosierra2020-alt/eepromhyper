@@ -148,7 +148,47 @@ if not os.path.exists(LOGOS_DIR):
 st.set_page_config(page_title="HyperTork System Hub", page_icon="⚙️", layout="wide")
 
 # ==========================================
-# 3. ROTINAS OBD-II DE ALTA PERFORMANCE (RAG)
+# 3. ROTINAS AUXILIARES DE IMAGEM (LOGOS)
+# ==========================================
+def aplicar_fundo_transparente(caminho_img):
+    img = Image.open(caminho_img).convert("RGBA")
+    dados = img.getdata()
+    novos_dados = []
+    for item in dados:
+        if item[0] >= 240 and item[1] >= 240 and item[2] >= 240:
+            novos_dados.append((255, 255, 255, 0))
+        else:
+            novos_dados.append(item)
+    img.putdata(novos_dados)
+    return img
+
+def buscar_logo_montadora_automatica(montadora):
+    if os.path.exists(LOGOS_DIR):
+        arquivos = os.listdir(LOGOS_DIR)
+        mont_alvo = limpar_para_comparacao(montadora)
+        for arquivo in arquivos:
+            if not arquivo.lower().endswith(('.png', '.jpg', '.jpeg', '.webp', '.gif')): continue
+            nome_base = os.path.splitext(arquivo)[0]
+            nome_arq = limpar_para_comparacao(nome_base)
+            if mont_alvo == nome_arq: return os.path.join(LOGOS_DIR, arquivo)
+        for arquivo in arquivos:
+            if not arquivo.lower().endswith(('.png', '.jpg', '.jpeg', '.webp', '.gif')): continue
+            nome_base = os.path.splitext(arquivo)[0]
+            nome_arq = limpar_para_comparacao(nome_base)
+            if mont_alvo in nome_arq or nome_arq in mont_alvo: return os.path.join(LOGOS_DIR, arquivo)
+    return None
+
+def obter_image_base64_html(caminho):
+    try:
+        extensao = caminho.split('.')[-1].lower()
+        mime = "image/jpeg" if extensao in ['jpg', 'jpeg'] else f"image/{extensao}"
+        with open(caminho, "rb") as image_file:
+            encoded = base64.b64encode(image_file.read()).decode()
+            return f"data:{mime};base64,{encoded}"
+    except: return ""
+
+# ==========================================
+# 4. ROTINAS OBD-II DE ALTA PERFORMANCE (RAG)
 # ==========================================
 def salvar_pesquisa_obd2(codigo, montadora, modelo, ano, descricao):
     conn = conectar_db()
@@ -209,7 +249,7 @@ def diagnostico_avancado_obd2(codigo, montadora="", modelo="", ano=""):
         return f"**Dados crus da internet:**\n{search_results}"
 
 # ==========================================
-# 4. ROTINAS EEPROM E ARQUIVOS
+# 5. ROTINAS EEPROM E ARQUIVOS
 # ==========================================
 def listar_montadoras():
     montadoras = set()
@@ -246,32 +286,6 @@ def buscar_dados_veiculo_unificado(montadora, modelo):
         conn.close()
     except: pass
     return None
-
-def buscar_logo_montadora_automatica(montadora):
-    if os.path.exists(LOGOS_DIR):
-        arquivos = os.listdir(LOGOS_DIR)
-        mont_alvo = limpar_para_comparacao(montadora)
-        for arquivo in arquivos:
-            if not arquivo.lower().endswith(('.png', '.jpg', '.jpeg', '.webp', '.gif')): continue
-            # Agora extrai o nome base garantindo que não corte em pontos extras (ex: volvo.logo.png)
-            nome_base = os.path.splitext(arquivo)[0]
-            nome_arq = limpar_para_comparacao(nome_base)
-            if mont_alvo == nome_arq: return os.path.join(LOGOS_DIR, arquivo)
-        for arquivo in arquivos:
-            if not arquivo.lower().endswith(('.png', '.jpg', '.jpeg', '.webp', '.gif')): continue
-            nome_base = os.path.splitext(arquivo)[0]
-            nome_arq = limpar_para_comparacao(nome_base)
-            if mont_alvo in nome_arq or nome_arq in mont_alvo: return os.path.join(LOGOS_DIR, arquivo)
-    return None
-
-def obter_image_base64_html(caminho):
-    try:
-        extensao = caminho.split('.')[-1].lower()
-        mime = "image/jpeg" if extensao in ['jpg', 'jpeg'] else f"image/{extensao}"
-        with open(caminho, "rb") as image_file:
-            encoded = base64.b64encode(image_file.read()).decode()
-            return f"data:{mime};base64,{encoded}"
-    except: return ""
 
 def salvar_novo_veiculo_hibrido(montadora, modelo, inicio, intervalo, info_extra, valores_invertidos, escala, imagens_upload=None):
     montadora = higienizar_nome(montadora); modelo = higienizar_nome(modelo)
@@ -327,7 +341,7 @@ def obter_resumo_banco_para_ia():
     except: return "Erro ao carregar dados locais."
 
 # ==========================================
-# 5. CORE DE INTELIGÊNCIA ARTIFICIAL (CHIP)
+# 6. CORE DE INTELIGÊNCIA ARTIFICIAL (CHIP)
 # ==========================================
 def processar_linguagem_chip(prompt_cru):
     DADOS_DO_SISTEMA = obter_resumo_banco_para_ia()
@@ -391,20 +405,8 @@ def abrir_modal_zoom(foto_bytes, legenda_titulo):
     if st.button("❌ Fechar Visualização", use_container_width=True): st.rerun()
 
 # ==========================================
-# FUNÇÕES ESPECÍFICAS DA ABA DE GESTÃO DE OS
+# 7. FUNÇÕES ESPECÍFICAS DA ABA DE GESTÃO DE OS
 # ==========================================
-def aplicar_fundo_transparente(caminho_img):
-    img = Image.open(caminho_img).convert("RGBA")
-    dados = img.getdata()
-    novos_dados = []
-    for item in dados:
-        if item[0] >= 240 and item[1] >= 240 and item[2] >= 240:
-            novos_dados.append((255, 255, 255, 0))
-        else:
-            novos_dados.append(item)
-    img.putdata(novos_dados)
-    return img
-
 def calcular_valor_inicial(linha):
     descricao = str(linha.get("Nome arquivo", "")).upper().strip()
     veiculo = str(linha.get("Fabricante", "")).upper().strip()
@@ -500,7 +502,7 @@ def modificar_modelo_docx(modelo_bytes, flash_point, cliente_nome, cidade, conta
     return target
 
 # ==========================================
-# 6. ESTILIZAÇÃO CSS E RESPONSIVIDADE
+# 8. ESTILIZAÇÃO CSS E RESPONSIVIDADE
 # ==========================================
 st.markdown("""
     <style>
@@ -522,7 +524,8 @@ st.markdown("""
         flex-direction: column;
         align-items: center;
         justify-content: center;
-        min-height: 220px;
+        height: 230px; /* ALINHAMENTO PERFEITO: Altura fixa em vez de mínima */
+        box-sizing: border-box; /* Garante que o padding não quebre o tamanho */
         color: white;
         border-radius: 20px;
         box-shadow: 0 8px 16px rgba(0,0,0,0.2);
@@ -638,7 +641,7 @@ if "df_filtrado" not in st.session_state:
     st.session_state.df_filtrado = None
 
 # ==========================================
-# 7. BARRA LATERAL E NAVEGAÇÃO
+# 9. BARRA LATERAL E NAVEGAÇÃO
 # ==========================================
 st.sidebar.title("🛡️ HyperTork Hub")
 if st.session_state.app_mode != "HOME":
@@ -653,9 +656,21 @@ else:
 montadoras_existentes = listar_montadoras()
 
 # ==========================================
-# 8. RENDERIZAÇÃO DAS TELAS
+# 10. RENDERIZAÇÃO DAS TELAS
 # ==========================================
 if st.session_state.app_mode == "HOME":
+    
+    caminho_logo = os.path.join(LOGOS_DIR, "logo.png")
+    if os.path.exists(caminho_logo):
+        col_logo1, col_logo2, col_logo3 = st.columns([1, 2, 1])
+        with col_logo2:
+            try:
+                logo_tratada = aplicar_fundo_transparente(caminho_logo)
+                st.image(logo_tratada, use_container_width=True)
+            except Exception:
+                st.image(caminho_logo, use_container_width=True)
+        st.markdown("---")
+
     st.markdown("<h1 style='text-align: center; margin-bottom: 50px;'>HyperTork System Hub</h1>", unsafe_allow_html=True)
     
     col1, col2, col3 = st.columns(3)
@@ -750,17 +765,16 @@ elif st.session_state.app_mode == "EEPROM":
                         if caminho_logo:
                             logo_html_src = obter_image_base64_html(caminho_logo)
                             if logo_html_src:
-                                # Correção do fundo branco! Background agora é transparente.
                                 st.markdown(f"""
                                     <div style="display: flex; justify-content: center; align-items: center; 
-                                                background-color: transparent; padding: 10px; border-radius: 8px; 
+                                                background-color: #F4F6F9; padding: 10px; border-radius: 8px; 
                                                 height: 110px; width: 100%; box-sizing: border-box; margin-bottom: 6px;">
-                                        <img src="{logo_html_src}" style="max-height: 90px; max-width: 100%; object-fit: contain;">
+                                        <img src="{logo_html_src}" style="max-height: 90px; max-width: 100%; object-fit: contain; filter: drop-shadow(1px 1px 3px rgba(0,0,0,0.4));">
                                     </div>
                                 """, unsafe_allow_html=True)
                         else:
                             st.markdown(f"""
-                                <div style="display: flex; justify-content: center; align-items: center; height: 110px; width: 100%; margin-bottom: 6px;">
+                                <div style="display: flex; justify-content: center; align-items: center; height: 110px; width: 100%; margin-bottom: 6px; background-color: #F4F6F9; border-radius: 8px;">
                                     <p style='text-align:center; font-weight:bold; color:#1E88E5; margin:0;'>🏭 {m}</p>
                                 </div>
                             """, unsafe_allow_html=True)
@@ -774,11 +788,10 @@ elif st.session_state.app_mode == "EEPROM":
             if caminho_da_logo:
                 logo_html_src = obter_image_base64_html(caminho_da_logo)
                 if logo_html_src:
-                    # Correção do fundo transparente no cabeçalho interno da marca
                     st.markdown(f"""
                         <div style="display: flex; justify-content: center; align-items: center; 
-                                    background-color: transparent; padding: 6px; border-radius: 8px; height: 75px; width: 75px; box-sizing: border-box;">
-                            <img src="{logo_html_src}" style="max-height: 60px; max-width: 100%; object-fit: contain;">
+                                    background-color: #F4F6F9; padding: 6px; border-radius: 8px; height: 75px; width: 75px; box-sizing: border-box;">
+                            <img src="{logo_html_src}" style="max-height: 60px; max-width: 100%; object-fit: contain; filter: drop-shadow(1px 1px 2px rgba(0,0,0,0.4));">
                         </div>
                     """, unsafe_allow_html=True)
                 else: st.subheader("🏭")
@@ -969,19 +982,6 @@ elif st.session_state.app_mode == "EEPROM":
 # TELA 3: GESTÃO DE SERVIÇOS E OS
 # ------------------------------------------
 elif st.session_state.app_mode == "GESTAO_OS":
-    caminho_logo = os.path.join(LOGOS_DIR, "logo.png")
-    if os.path.exists(caminho_logo):
-        col_logo1, col_logo2, col_logo3 = st.columns([1, 2, 1])
-        with col_logo2:
-            try:
-                logo_tratada = aplicar_fundo_transparente(caminho_logo)
-                st.image(logo_tratada, use_container_width=True)
-            except Exception:
-                st.image(caminho_logo, use_container_width=True)
-        st.markdown("---")
-    else:
-        st.info("📌 Dica: Suba o arquivo da sua logo empresarial com o nome exato 'logo.png' na pasta 'Logos' para exibi-la aqui no topo!")
-
     st.title("📊 Gestão de Serviços & Emissão de OS")
     st.write("Filtragem, cálculo de valores, remoção de duplicadas por Matrícula e preenchimento automático do modelo Word da Hyper Tork.")
 
@@ -1215,7 +1215,7 @@ elif st.session_state.app_mode == "GESTAO_OS":
                 )
 
 # ==========================================
-# 9. CHIP POP-UP FLUTUANTE (BOTÃO LARANJA)
+# 11. CHIP POP-UP FLUTUANTE (BOTÃO LARANJA)
 # ==========================================
 with st.popover("🤖"):
     st.markdown("#### 💬 Chip - IA")
