@@ -127,7 +127,7 @@ st.set_page_config(page_title="HyperTork EEPROM System", layout="wide")
 if 'montadora_selecionada' not in st.session_state:
     st.session_state.montadora_selecionada = ""
 if 'chat_historico' not in st.session_state:
-    st.session_state.chat_historico = [{"role": "assistant", "content": "Olá! Eu sou o **Chip**. Meu cérebro foi conectado a uma rede neural avançada! Pode me pedir tarefas de forma totalmente livre e sem comandos engessados."}]
+    st.session_state.chat_historico = [{"role": "assistant", "content": "Olá! Eu sou o **Chip**. Fui atualizado com capacidade analítica profunda. Agora eu consigo ler nossos dados e raciocinar sobre eles. Pode me perguntar qualquer coisa!"}]
 
 # --- FUNÇÕES DE GERENCIAMENTO ---
 def listar_montadoras():
@@ -246,65 +246,82 @@ def excluir_montadora_db(montadora):
     if os.path.exists(pasta_montadora): shutil.rmtree(pasta_montadora)
     backup_local_para_nuvem() 
 
-# --- 🧠 INTEL_ARTIFICIAL: CORE DE NLP DO CHIP ---
+def obter_resumo_banco_para_ia():
+    """Função RAG: Extrai os dados reais para o Chip conseguir raciocinar sobre eles."""
+    try:
+        conn = conectar_db()
+        cursor = conn.cursor()
+        cursor.execute("SELECT nome FROM montadoras")
+        monts = [r[0] for r in cursor.fetchall()]
+        
+        cursor.execute("SELECT montadora_nome, modelo, posicao_inicio, intervalo, escala, valores_invertidos, detalhes FROM veiculos")
+        veiculos = cursor.fetchall()
+        conn.close()
+        
+        if not monts and not veiculos:
+            return "O banco de dados do sistema está completamente vazio no momento."
+            
+        resumo = f"MONTADORAS ATUAIS: {', '.join(monts)}\n\nVEÍCULOS E FICHAS TÉCNICAS SALVAS:\n"
+        for v in veiculos:
+            resumo += f"- {v[0]} {v[1]} | Endereço Início: {v[2]} | Intervalo: {v[3]} | Escala: {v[4]} | Invertido: {v[5]} | Detalhes: {v[6]}\n"
+        return resumo
+    except Exception as e:
+        return "Não foi possível carregar os dados reais."
+
+# --- 🧠 INTEL_ARTIFICIAL: CORE DE NLP E RACIOCÍNIO DO CHIP ---
 def processar_linguagem_chip(prompt_cru):
-    """Interpreta intenções usando LLM via InferenceClient com fallback resiliente de Regex"""
+    """Interpreta intenções e analisa dados usando LLM via InferenceClient"""
     
-    # 🌟 PASSO DE CONSCIÊNCIA DE MEMÓRIA DE ESCOPO DO PROGRAMA (Enviado para a IA saber tudo do app)
+    # 🌟 PASSO DE CONSCIÊNCIA: O Chip agora lê o banco inteiro ANTES de te responder.
+    DADOS_DO_SISTEMA = obter_resumo_banco_para_ia()
+    
     CONTEUDO_DO_SISTEMA = (
-        "Você é o Chip, a IA operacional do HyperTork EEPROM System. "
-        "O programa possui: Painel Inicial (grid com logos das marcas), Visualizador de Imagens "
-        "com Zoom em overlay/modal sem travar a tela, Ficha Técnica de Veículos (exibe Gráfico Principal e "
-        "Complementar, Início de Gráfico, Intervalo de Endereço, Valores Invertidos e Escala 8/16/32 bits), "
-        "Seção Administrativa Expansível para Cadastros Manuais, Painel 'GESTOR DE ALTERAÇÃO' para Exclusões "
-        "e Edições Totais, e Sistema de persistência em Nuvem via Hugging Face Datasets (HyperTork_DB).\n\n"
-        "Sua tarefa é ler a mensagem do usuário e mapear para uma das ações abaixo. Responda APENAS com um objeto JSON válido, sem tags markdown, obedecendo este formato exato:\n"
+        "Você é o Chip, a IA operacional, analítica e amigável do HyperTork EEPROM System. "
+        "Você tem capacidade de executar comandos (criar/excluir) e de RACIOCINAR sobre os dados reais salvos.\n\n"
+        f"--- DADOS ATUAIS NO SEU BANCO DE DADOS ---\n{DADOS_DO_SISTEMA}\n--------------------------------------------\n\n"
+        "Sua tarefa é ler a mensagem do usuário, analisar os DADOS ATUAIS se necessário, e mapear a intenção. "
+        "Responda APENAS com um objeto JSON válido, sem tags markdown, obedecendo este formato exato:\n"
         "{\n"
-        '  "acao": "CRIAR_MONTADORA" | "CADASTRAR_VEICULO" | "EXCLUIR_VEICULO" | "EXCLUIR_MONTADORA" | "RENOMEAR_MONTADORA" | "STATUS" | "SYNC" | "CONVERSAR",\n'
-        '  "parametros": { "montadora": "NOME_AQUI", "modelo": "NOME_AQUI", "novo_nome": "NOME_AQUI" },\n'
-        '  "resposta": "Uma resposta amigável, entusiasmada e profissional explicando o que fez ou tirando a dúvida."\n'
+        '  "acao": "CRIAR_MONTADORA" | "CADASTRAR_VEICULO" | "EXCLUIR_VEICULO" | "EXCLUIR_MONTADORA" | "RENOMEAR_MONTADORA" | "STATUS" | "SYNC" | "ANALISAR_RESPONDER",\n'
+        '  "parametros": { "montadora": "NOME", "modelo": "NOME", "novo_nome": "NOME" },\n'
+        '  "resposta": "Sua resposta. Se a ação for ANALISAR_RESPONDER, aja como um consultor técnico brilhante: use os DADOS ATUAIS para responder dúvidas detalhadas, comparar carros, checar escalas ou apenas conversar de forma natural e inteligente."\n'
         "}\n"
-        "Se o usuário pedir para cadastrar um veículo, preencha os parâmetros 'montadora' e 'modelo'. Se for criar montadora, preencha apenas 'montadora'. Se for apenas uma conversa, use 'CONVERSAR'."
+        "Regra: Se o usuário pedir para criar/apagar algo, preencha os parâmetros e escolha a ação correta. Se ele fizer uma pergunta analítica ou apenas conversar, use a ação 'ANALISAR_RESPONDER' e forneça a resposta elaborada no campo 'resposta'."
     )
     
     if HF_TOKEN:
         try:
-            # Conecta à super inteligência na nuvem
             client = InferenceClient(token=HF_TOKEN)
             mensagens = [
                 {"role": "system", "content": CONTEUDO_DO_SISTEMA},
                 {"role": "user", "content": prompt_cru}
             ]
             
-            # Executa a chamada do modelo de instrução leve e ultra rápido
             completude = client.chat_completion(
                 model="Qwen/Qwen2.5-7B-Instruct",
                 messages=mensagens,
-                max_tokens=400,
-                temperature=0.1
+                max_tokens=500,
+                temperature=0.3 # Levemente maior para permitir raciocínio mais fluído
             )
             
             resposta_ia = completude.choices[0].message.content.strip()
-            # Limpa possíveis blocos de código markdown gerados pela IA
             resposta_ia = re.sub(r'```json\s*|```', '', resposta_ia)
             dados = json.loads(resposta_ia)
             
-            acao = dados.get("acao", "CONVERSAR")
+            acao = dados.get("acao", "ANALISAR_RESPONDER")
             params = dados.get("parametros", {})
-            texto_base = dados.get("resposta", "Comando processado com estabilidade!")
+            texto_base = dados.get("resposta", "Comando analisado com sucesso!")
             
-            # --- AGENTE EXECUTOR DE INFRAESTRUTURA ---
+            # --- AGENTE EXECUTOR ---
             if acao == "CRIAR_MONTADORA" and params.get("montadora"):
                 m = higienizar_nome(params["montadora"])
                 conn = conectar_db(); cursor = conn.cursor()
                 cursor.execute("SELECT nome FROM montadoras WHERE nome = ?", (m,))
                 if cursor.fetchone():
-                    conn.close()
-                    os.makedirs(os.path.join(BASE_DIR, m), exist_ok=True)
-                    return f"🏭 **Chip informa:** A marca **{m}** já consta no banco de dados. Reestruturei a pasta física dela!"
+                    conn.close(); os.makedirs(os.path.join(BASE_DIR, m), exist_ok=True)
+                    return f"🏭 **Chip informa:** A marca **{m}** já consta no banco de dados."
                 cursor.execute("INSERT INTO montadoras (nome) VALUES (?)", (m,))
-                conn.commit(); conn.close()
-                os.makedirs(os.path.join(BASE_DIR, m), exist_ok=True)
+                conn.commit(); conn.close(); os.makedirs(os.path.join(BASE_DIR, m), exist_ok=True)
                 backup_local_para_nuvem()
                 return texto_base
                 
@@ -317,7 +334,7 @@ def processar_linguagem_chip(prompt_cru):
                     cursor.execute("INSERT INTO montadoras (nome) VALUES (?)", (m,))
                     os.makedirs(os.path.join(BASE_DIR, m), exist_ok=True)
                 conn.commit(); conn.close()
-                salvar_novo_veiculo_hibrido(m, v, "Não Definido", "Não Definido", "Gerado inteligentemente via Chat", "Desativado", "8 bits", None)
+                salvar_novo_veiculo_hibrido(m, v, "Não Definido", "Não Definido", "Gerado inteligentemente via Chat Analítico", "Desativado", "8 bits", None)
                 return texto_base
                 
             elif acao == "EXCLUIR_VEICULO" and params.get("montadora") and params.get("modelo"):
@@ -352,10 +369,11 @@ def processar_linguagem_chip(prompt_cru):
                 qtd = sincronizar_banco_com_pastas()
                 return f"🔄 **Manutenção Concluída:** Recriei **{qtd} diretórios** locais com base nos metadados do banco!"
                 
+            # Se for 'ANALISAR_RESPONDER', o Chip usa o raciocínio gerado pelo LLM com base nos dados.
             return texto_base
             
-        except Exception:
-            pass # Caso a API falhe, cai no motor analítico resiliente de Regex abaixo
+        except Exception as e:
+            pass # Fallback
 
     # --- MOTOR DE BACKUP (Fuzzy/Regex) SE A IA FICAR OFFLINE ---
     msg = unicodedata.normalize('NFKD', prompt_cru).encode('ASCII', 'ignore').decode('utf-8').lower().strip()
@@ -376,9 +394,9 @@ def processar_linguagem_chip(prompt_cru):
         conn.commit(); conn.close()
         os.makedirs(os.path.join(BASE_DIR, nome_m), exist_ok=True)
         backup_local_para_nuvem()
-        return f"Factory 🏭 **Sucesso:** Marca **{nome_m}** adicionada via motor reserva."
+        return f"🏭 **Sucesso:** Marca **{nome_m}** adicionada via motor reserva."
 
-    return "🤖 Olá! Estou online e interpretando seus comandos de forma livre. Se quiser ver minhas capacidades, digite 'ajuda'!"
+    return "🤖 Olá! Estou online. O servidor de IA profunda demorou a responder, mas meu motor de retaguarda está pronto!"
 
 # --- 🖼️ MODAL DE ZOOM EXPANDIDO EM TELA CHEIA ---
 @st.dialog("🔍 Visualizador de Mapa Ampliado", width="large")
@@ -406,18 +424,19 @@ if st.sidebar.button("🏠 Voltar para Tela Inicial", use_container_width=True):
     st.rerun()
 
 st.sidebar.markdown("---")
-st.sidebar.markdown("🤖 **Chip - Inteligência Neural**")
+st.sidebar.markdown("🤖 **Chip - Inteligência Analítica**")
 
 for mensagem in st.session_state.chat_historico:
     with st.sidebar.chat_message(mensagem["role"]): st.markdown(mensagem["content"])
 
-if prompt := st.sidebar.chat_input("Fale com o Chip de forma totalmente livre..."):
+if prompt := st.sidebar.chat_input("Pergunte sobre os dados ou dê um comando livre..."):
     st.session_state.chat_historico.append({"role": "user", "content": prompt})
     if prompt.strip().lower() in ["/limpar", "limpar chat", "limpar"]:
         st.session_state.chat_historico = [{"role": "assistant", "content": "Visão redefinida!"}]
         st.rerun()
     else:
-        resposta = processar_linguagem_chip(prompt)
+        with st.spinner("Analisando dados..."):
+            resposta = processar_linguagem_chip(prompt)
         st.session_state.chat_historico.append({"role": "assistant", "content": resposta})
         st.rerun()
 
