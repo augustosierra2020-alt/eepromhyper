@@ -127,6 +127,8 @@ def init_db():
     except: pass
     try: cursor.execute("ALTER TABLE obd2_history ADD COLUMN ano TEXT")
     except: pass
+    try: cursor.execute("ALTER TABLE obd2_history ADD COLUMN segmento TEXT")
+    except: pass
     
     conn.commit()
     conn.close()
@@ -152,7 +154,6 @@ st.set_page_config(page_title="HyperTork System Hub", page_icon="⚙️", layout
 # ==========================================
 def buscar_logo_montadora_automatica(montadora):
     if os.path.exists(LOGOS_DIR):
-        # PRIORIDADE PARA PNG: Ordena os arquivos para que os PNGs sejam verificados primeiro
         arquivos = sorted(os.listdir(LOGOS_DIR), key=lambda x: (not x.lower().endswith('.png'), x))
         mont_alvo = limpar_para_comparacao(montadora)
         for arquivo in arquivos:
@@ -177,49 +178,64 @@ def obter_image_base64_html(caminho):
     except: return ""
 
 # ==========================================
-# 4. ROTINAS OBD-II DE ALTA PERFORMANCE (RAG)
+# 4. ROTINAS OBD-II / DTC DE ALTA PERFORMANCE (RAG UNIVERSAL)
 # ==========================================
-def salvar_pesquisa_obd2(codigo, montadora, modelo, ano, descricao):
+def salvar_pesquisa_obd2(codigo, segmento, montadora, modelo, ano, descricao):
     conn = conectar_db()
     c = conn.cursor()
-    c.execute("INSERT INTO obd2_history (codigo, montadora, modelo, ano, descricao) VALUES (?, ?, ?, ?, ?)", 
-              (codigo, montadora, modelo, ano, descricao))
+    try:
+        c.execute("INSERT INTO obd2_history (codigo, segmento, montadora, modelo, ano, descricao) VALUES (?, ?, ?, ?, ?, ?)", 
+                  (codigo, segmento, montadora, modelo, ano, descricao))
+    except sqlite3.OperationalError:
+        c.execute("INSERT INTO obd2_history (codigo, montadora, modelo, ano, descricao) VALUES (?, ?, ?, ?, ?)", 
+                  (codigo, f"{montadora} ({segmento})", modelo, ano, descricao))
     conn.commit(); conn.close()
     backup_local_para_nuvem()
 
 def carregar_historico_obd2():
     conn = conectar_db()
-    df = pd.read_sql_query("SELECT codigo, montadora, modelo, ano, data FROM obd2_history ORDER BY id DESC", conn)
+    try:
+        df = pd.read_sql_query("SELECT codigo, segmento, montadora, modelo, ano, data FROM obd2_history ORDER BY id DESC", conn)
+    except:
+        df = pd.read_sql_query("SELECT codigo, montadora, modelo, ano, data FROM obd2_history ORDER BY id DESC", conn)
     conn.close()
     return df
 
-def diagnostico_avancado_obd2(codigo, montadora="", modelo="", ano=""):
-    query = f"OBD2 code {codigo}"
+def diagnostico_avancado_obd2(codigo, segmento="", montadora="", modelo="", ano=""):
+    # Busca Universal - Não se limita ao termo "OBD2" para abranger Náutica, Agrícola, etc.
+    query = f"DTC fault code {codigo}"
     if montadora: query += f" {montadora}"
     if modelo: query += f" {modelo}"
-    query += " symptoms causes repair manual"
+    if segmento and segmento != "Geral / Outros": query += f" {segmento.split('/')[0]}"
+    query += " symptoms causes repair troubleshooting"
     
     search_results = ""
     try:
         with DDGS() as ddgs:
-            resultados = list(ddgs.text(query, max_results=4))
+            resultados = list(ddgs.text(query, max_results=5))
             for r in resultados: search_results += f"- {r['body']}\n"
     except Exception:
         search_results = "(Busca na web indisponível no momento. Use apenas sua base de conhecimento interna.)"
         
     prompt_ia = f"""
-    Aja como o 'Chip', um Mecânico Chefe Sênior experiente. O usuário precisa de um laudo TÉCNICO COMPLETO sobre a falha OBD-II: **{codigo}**.
-    Contexto: Montadora: {montadora or 'Qualquer'} | Modelo: {modelo or 'Qualquer'} | Ano: {ano or 'Qualquer'}.
+    Aja como o 'Chip', um Mecânico Chefe Sênior especialista em múltiplos segmentos (Leves, Pesados, Agrícola, Náutica e Motos).
+    O usuário precisa de um laudo TÉCNICO COMPLETO sobre a falha / DTC: **{codigo}**.
     
-    Dados cruzados da web agora:
+    Contexto do Veículo/Máquina:
+    - Segmento: {segmento or 'Não especificado'}
+    - Marca/Montadora: {montadora or 'Qualquer'}
+    - Modelo: {modelo or 'Qualquer'}
+    - Ano: {ano or 'Qualquer'}
+    
+    Dados cruzados dos manuais da web agora:
     {search_results}
     
     Gere um relatório técnico de chefe de oficina contendo:
-    1. Significado Direto da Falha.
-    2. Aviso Cruzado: Se este código variar o significado entre montadoras (ex: GM vs Volvo), liste essas diferenças!
-    3. Sintomas.
+    1. Significado Direto da Falha (DTC).
+    2. Aviso Cruzado: Se este código variar dependendo do segmento ou montadora, explique a diferença!
+    3. Sintomas percebidos na máquina/veículo.
     4. Causas mais prováveis.
-    5. Passos para diagnóstico e solução.
+    5. Passos práticos para diagnóstico e solução na oficina.
     Responda em Markdown, com tom profissional, prático e em Português do Brasil.
     """
     
@@ -229,7 +245,7 @@ def diagnostico_avancado_obd2(codigo, montadora="", modelo="", ano=""):
             completude = client.chat_completion(
                 model="Qwen/Qwen2.5-7B-Instruct",
                 messages=[{"role": "user", "content": prompt_ia}],
-                max_tokens=800, temperature=0.3
+                max_tokens=850, temperature=0.3
             )
             return completude.choices[0].message.content.strip()
         except Exception as e:
@@ -368,8 +384,8 @@ def processar_linguagem_chip(prompt_cru):
                 mont = params.get("montadora", "")
                 mod = params.get("modelo", "")
                 ano = params.get("ano", "")
-                laudo = diagnostico_avancado_obd2(cod, mont, mod, ano)
-                salvar_pesquisa_obd2(cod, mont, mod, ano, laudo)
+                laudo = diagnostico_avancado_obd2(cod, "", mont, mod, ano)
+                salvar_pesquisa_obd2(cod, "IA Chat", mont, mod, ano, laudo)
                 return f"🔧 **Laudo de Falha do Chefe:**\n\n{laudo}"
                 
             elif acao == "CRIAR_MONTADORA" and params.get("montadora"):
@@ -513,7 +529,7 @@ st.markdown("""
         flex-direction: column !important;
         align-items: center !important;
         justify-content: center !important;
-        height: 150px !important; /* ALTURA TRAVADA E FIXA: Todos os botões terão exatos 150px */
+        height: 150px !important; /* ALTURA TRAVADA E FIXA */
         min-height: 150px !important;
         max-height: 150px !important;
         padding: 15px !important; 
@@ -695,32 +711,48 @@ if st.session_state.app_mode == "HOME":
         """, unsafe_allow_html=True)
 
 # ------------------------------------------
-# TELA 1: OBD-II AI SCANNER
+# TELA 1: OBD-II / DTC SCANNERS (BUSCA UNIVERSAL)
 # ------------------------------------------
 elif st.session_state.app_mode == "OBD2":
-    st.title("🚗 Diagnóstico de Falhas OBD-II")
-    st.markdown("Identifique problemas no seu veículo com uma análise RAG profunda cruzando manuais de oficina e da web.")
+    st.title("🛠️ Diagnóstico Universal de Falhas (DTC)")
+    st.markdown("Busca independente avançada para qualquer veículo ou máquina. **Não necessita de cadastro na aba EEPROM.**")
     
     with st.container(border=True):
-        col_cod, col_mont, col_mod, col_ano = st.columns([2, 2, 2, 1])
+        col_cod, col_seg, col_mont, col_mod, col_ano = st.columns([2, 2, 2, 2, 1])
+        
         with col_cod:
-            codigo_input = st.text_input("Código (Ex: P0001)", placeholder="Obrigatório").strip().upper()
-        with col_mont:
-            mont_input = st.text_input("Montadora", placeholder="Ex: Volvo").strip()
-        with col_mod:
-            mod_input = st.text_input("Modelo", placeholder="Ex: VM 330").strip()
-        with col_ano:
-            ano_input = st.text_input("Ano", placeholder="Ex: 2014").strip()
+            codigo_input = st.text_input("Código de Falha", placeholder="Ex: P0001, SPN 3216").strip().upper()
             
-        btn_buscar = st.button("🔍 Iniciar Diagnóstico do Chefe", use_container_width=True, type="primary")
+        with col_seg:
+            opcoes_segmento = [
+                "Geral / Outros", 
+                "Pesado / Caminhão / Ônibus", 
+                "Leve / Carro de Passeio", 
+                "Agrícola / Trator", 
+                "Construção / Linha Amarela", 
+                "Náutica / Marítimo", 
+                "Motos / Quadriciclos"
+            ]
+            segmento_input = st.selectbox("Segmento", opcoes_segmento)
+            
+        with col_mont:
+            mont_input = st.text_input("Marca / Montadora", placeholder="Ex: Volvo, John Deere...").strip()
+            
+        with col_mod:
+            mod_input = st.text_input("Modelo", placeholder="Ex: FH 460, 8R 340...").strip()
+            
+        with col_ano:
+            ano_input = st.text_input("Ano", placeholder="Ex: 2020").strip()
+            
+        btn_buscar = st.button("🔍 Iniciar Diagnóstico Universal", use_container_width=True, type="primary")
             
     if btn_buscar:
         if codigo_input:
-            with st.spinner(f"Cruzando bancos de dados globais e manuais para {codigo_input}..."):
-                descricao_encontrada = diagnostico_avancado_obd2(codigo_input, mont_input, mod_input, ano_input)
-                st.subheader(f"Laudo Técnico: {codigo_input} {mont_input}")
+            with st.spinner(f"Cruzando bancos de dados e manuais de {segmento_input} para {codigo_input}..."):
+                descricao_encontrada = diagnostico_avancado_obd2(codigo_input, segmento_input, mont_input, mod_input, ano_input)
+                st.subheader(f"Laudo Técnico: {codigo_input} | {mont_input or 'Marca Não Informada'}")
                 st.info(descricao_encontrada)
-                salvar_pesquisa_obd2(codigo_input, mont_input, mod_input, ano_input, descricao_encontrada)
+                salvar_pesquisa_obd2(codigo_input, segmento_input, mont_input, mod_input, ano_input, descricao_encontrada)
                 st.success("✅ Diagnóstico salvo no histórico da nuvem!")
         else:
             st.warning("O código da falha é obrigatório para iniciar o diagnóstico.")
@@ -731,7 +763,7 @@ elif st.session_state.app_mode == "OBD2":
     if not df_historico.empty:
         st.dataframe(df_historico, use_container_width=True, hide_index=True)
     else:
-        st.write("Nenhum código foi pesquisado ainda.")
+        st.write("Nenhuma falha foi pesquisada ainda.")
 
 # ------------------------------------------
 # TELA 2: GESTÃO EEPROM
