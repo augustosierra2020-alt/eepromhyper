@@ -150,18 +150,6 @@ st.set_page_config(page_title="HyperTork System Hub", page_icon="⚙️", layout
 # ==========================================
 # 3. ROTINAS AUXILIARES DE IMAGEM (LOGOS)
 # ==========================================
-def aplicar_fundo_transparente(caminho_img):
-    img = Image.open(caminho_img).convert("RGBA")
-    dados = img.getdata()
-    novos_dados = []
-    for item in dados:
-        if item[0] >= 240 and item[1] >= 240 and item[2] >= 240:
-            novos_dados.append((255, 255, 255, 0))
-        else:
-            novos_dados.append(item)
-    img.putdata(novos_dados)
-    return img
-
 def buscar_logo_montadora_automatica(montadora):
     if os.path.exists(LOGOS_DIR):
         arquivos = os.listdir(LOGOS_DIR)
@@ -180,31 +168,12 @@ def buscar_logo_montadora_automatica(montadora):
 
 def obter_image_base64_html(caminho):
     try:
-        # SISTEMA FORÇADO PARA REMOVER O FUNDO BRANCO DE TODAS AS LOGOS
-        img = Image.open(caminho).convert("RGBA")
-        dados = img.getdata()
-        novos_dados = []
-        for item in dados:
-            # Tolerância alta para remover brancos e cinzas clarinhos
-            if item[0] >= 235 and item[1] >= 235 and item[2] >= 235:
-                novos_dados.append((255, 255, 255, 0))
-            else:
-                novos_dados.append(item)
-        img.putdata(novos_dados)
-        
-        buffered = io.BytesIO()
-        img.save(buffered, format="PNG")
-        encoded = base64.b64encode(buffered.getvalue()).decode()
-        return f"data:image/png;base64,{encoded}"
-    except Exception:
-        # Fallback de segurança se a IA de imagem falhar
-        try:
-            extensao = caminho.split('.')[-1].lower()
-            mime = "image/jpeg" if extensao in ['jpg', 'jpeg'] else f"image/{extensao}"
-            with open(caminho, "rb") as image_file:
-                encoded = base64.b64encode(image_file.read()).decode()
-                return f"data:{mime};base64,{encoded}"
-        except: return ""
+        extensao = caminho.split('.')[-1].lower()
+        mime = "image/png" if extensao == 'png' else ("image/jpeg" if extensao in ['jpg', 'jpeg'] else f"image/{extensao}")
+        with open(caminho, "rb") as image_file:
+            encoded = base64.b64encode(image_file.read()).decode()
+            return f"data:{mime};base64,{encoded}"
+    except: return ""
 
 # ==========================================
 # 4. ROTINAS OBD-II DE ALTA PERFORMANCE (RAG)
@@ -543,16 +512,18 @@ st.markdown("""
         flex-direction: column;
         align-items: center;
         justify-content: center;
-        height: 160px; /* BEM MAIS COMPACTO AGORA */
+        min-height: 120px; /* ALINHAMENTO FLEXÍVEL: Agora ele expande se precisar */
+        height: 100%;
+        padding: 15px; 
         box-sizing: border-box; 
         color: white;
-        border-radius: 20px;
-        box-shadow: 0 8px 16px rgba(0,0,0,0.2);
+        border-radius: 15px;
+        box-shadow: 0 4px 10px rgba(0,0,0,0.3);
         cursor: pointer;
         transition: transform 0.2s, box-shadow 0.2s;
         text-align: center;
-        padding: 20px;
         margin-bottom: 20px;
+        overflow: hidden; /* Corta qualquer coisa que tentar vazar */
     }
     
     .btn-blue { background: linear-gradient(145deg, #1E88E5, #1565C0); }
@@ -564,8 +535,9 @@ st.markdown("""
         box-shadow: 0 12px 24px rgba(0,0,0,0.4);
     }
     
-    .big-hub-btn h2 { color: white !important; margin: 10px 0 0 0 !important; font-weight: bold; font-size: 1.5rem;}
-    .big-hub-btn span { font-size: 2.5rem; }
+    /* Fontes levemente reduzidas para garantir o encaixe perfeito em qualquer tela */
+    .big-hub-btn h2 { color: white !important; margin: 8px 0 0 0 !important; font-weight: bold; font-size: 1.1rem; line-height: 1.2; word-wrap: break-word; text-transform: uppercase;}
+    .big-hub-btn span { font-size: 2.2rem; line-height: 1;}
 
     /* -----------------------------------------------------------
        ESTILIZAÇÃO DO CHIP (BOTÃO LARANJA FLUTUANTE)
@@ -683,10 +655,9 @@ if st.session_state.app_mode == "HOME":
         col_logo1, col_logo2, col_logo3 = st.columns([1, 2, 1])
         with col_logo2:
             try:
-                logo_tratada = aplicar_fundo_transparente(caminho_logo)
-                st.image(logo_tratada, use_container_width=True)
-            except Exception:
                 st.image(caminho_logo, use_container_width=True)
+            except Exception:
+                pass
         st.markdown("---")
 
     st.markdown("<h1 style='text-align: center; margin-bottom: 50px;'>HyperTork System Hub</h1>", unsafe_allow_html=True)
@@ -780,16 +751,19 @@ elif st.session_state.app_mode == "EEPROM":
                         if caminho_logo:
                             logo_html_src = obter_image_base64_html(caminho_logo)
                             if logo_html_src:
+                                # SOLUÇÃO DE LOGOS: Fundo #262730 (Dark Mode Escuro)
+                                # Branco no escuro aparece perfeitamente!
                                 st.markdown(f"""
                                     <div style="display: flex; justify-content: center; align-items: center; 
-                                                background-color: #F4F6F9; padding: 10px; border-radius: 8px; 
-                                                height: 110px; width: 100%; box-sizing: border-box; margin-bottom: 6px;">
-                                        <img src="{logo_html_src}" style="max-height: 90px; max-width: 100%; object-fit: contain; filter: drop-shadow(1px 1px 3px rgba(0,0,0,0.4));">
+                                                background-color: #262730; padding: 10px; border-radius: 8px; 
+                                                height: 110px; width: 100%; box-sizing: border-box; margin-bottom: 6px;
+                                                box-shadow: inset 0 0 5px rgba(0,0,0,0.5);">
+                                        <img src="{logo_html_src}" style="max-height: 90px; max-width: 100%; object-fit: contain; filter: drop-shadow(2px 2px 4px rgba(0,0,0,0.6));">
                                     </div>
                                 """, unsafe_allow_html=True)
                         else:
                             st.markdown(f"""
-                                <div style="display: flex; justify-content: center; align-items: center; height: 110px; width: 100%; margin-bottom: 6px; background-color: #F4F6F9; border-radius: 8px;">
+                                <div style="display: flex; justify-content: center; align-items: center; height: 110px; width: 100%; margin-bottom: 6px; background-color: #262730; border-radius: 8px; box-shadow: inset 0 0 5px rgba(0,0,0,0.5);">
                                     <p style='text-align:center; font-weight:bold; color:#1E88E5; margin:0;'>🏭 {m}</p>
                                 </div>
                             """, unsafe_allow_html=True)
@@ -805,8 +779,9 @@ elif st.session_state.app_mode == "EEPROM":
                 if logo_html_src:
                     st.markdown(f"""
                         <div style="display: flex; justify-content: center; align-items: center; 
-                                    background-color: #F4F6F9; padding: 6px; border-radius: 8px; height: 75px; width: 75px; box-sizing: border-box;">
-                            <img src="{logo_html_src}" style="max-height: 60px; max-width: 100%; object-fit: contain; filter: drop-shadow(1px 1px 2px rgba(0,0,0,0.4));">
+                                    background-color: #262730; padding: 6px; border-radius: 8px; height: 75px; width: 75px; box-sizing: border-box;
+                                    box-shadow: inset 0 0 5px rgba(0,0,0,0.5);">
+                            <img src="{logo_html_src}" style="max-height: 60px; max-width: 100%; object-fit: contain; filter: drop-shadow(1px 1px 2px rgba(0,0,0,0.5));">
                         </div>
                     """, unsafe_allow_html=True)
                 else: st.subheader("🏭")
