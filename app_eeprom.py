@@ -152,6 +152,7 @@ st.set_page_config(page_title="HyperTork System Hub", page_icon="⚙️", layout
 # ==========================================
 # 3. ROTINAS AUXILIARES DE IMAGEM (LOGOS)
 # ==========================================
+@st.cache_data(show_spinner=False)
 def buscar_logo_montadora_automatica(montadora):
     if os.path.exists(LOGOS_DIR):
         arquivos = sorted(os.listdir(LOGOS_DIR), key=lambda x: (not x.lower().endswith('.png'), x))
@@ -168,6 +169,7 @@ def buscar_logo_montadora_automatica(montadora):
             if mont_alvo in nome_arq or nome_arq in mont_alvo: return os.path.join(LOGOS_DIR, arquivo)
     return None
 
+@st.cache_data(show_spinner=False)
 def obter_image_base64_html(caminho):
     try:
         extensao = caminho.split('.')[-1].lower()
@@ -202,7 +204,6 @@ def carregar_historico_obd2():
     return df
 
 def diagnostico_avancado_obd2(codigo, segmento="", montadora="", modelo="", ano=""):
-    # Busca Universal - Não se limita ao termo "OBD2" para abranger Náutica, Agrícola, etc.
     query = f"DTC fault code {codigo}"
     if montadora: query += f" {montadora}"
     if modelo: query += f" {modelo}"
@@ -212,7 +213,8 @@ def diagnostico_avancado_obd2(codigo, segmento="", montadora="", modelo="", ano=
     search_results = ""
     try:
         with DDGS() as ddgs:
-            resultados = list(ddgs.text(query, max_results=5))
+            # OTIMIZAÇÃO DE VELOCIDADE: Reduzido para 3 resultados mais relevantes
+            resultados = list(ddgs.text(query, max_results=3))
             for r in resultados: search_results += f"- {r['body']}\n"
     except Exception:
         search_results = "(Busca na web indisponível no momento. Use apenas sua base de conhecimento interna.)"
@@ -232,10 +234,11 @@ def diagnostico_avancado_obd2(codigo, segmento="", montadora="", modelo="", ano=
     
     Gere um relatório técnico de chefe de oficina contendo:
     1. Significado Direto da Falha (DTC).
-    2. Aviso Cruzado: Se este código variar dependendo do segmento ou montadora, explique a diferença!
-    3. Sintomas percebidos na máquina/veículo.
-    4. Causas mais prováveis.
-    5. Passos práticos para diagnóstico e solução na oficina.
+    2. Descrição Técnica do Manual da Montadora (Descreva com termos técnicos da literatura oficial. Ex: Falha de comunicação, curto ao massa, circuito aberto, tensão acima do limite, etc.).
+    3. Aviso Cruzado: Se este código variar dependendo do segmento ou montadora, explique a diferença!
+    4. Sintomas percebidos na máquina/veículo.
+    5. Causas mais prováveis.
+    6. Passos práticos para diagnóstico e solução na oficina.
     Responda em Markdown, com tom profissional, prático e em Português do Brasil.
     """
     
@@ -245,7 +248,8 @@ def diagnostico_avancado_obd2(codigo, segmento="", montadora="", modelo="", ano=
             completude = client.chat_completion(
                 model="Qwen/Qwen2.5-7B-Instruct",
                 messages=[{"role": "user", "content": prompt_ia}],
-                max_tokens=850, temperature=0.3
+                max_tokens=850, 
+                temperature=0.2 # OTIMIZAÇÃO: Menos "criatividade", mais velocidade e precisão direta
             )
             return completude.choices[0].message.content.strip()
         except Exception as e:
