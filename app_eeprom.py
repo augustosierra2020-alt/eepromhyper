@@ -152,7 +152,8 @@ st.set_page_config(page_title="HyperTork System Hub", page_icon="⚙️", layout
 # ==========================================
 def buscar_logo_montadora_automatica(montadora):
     if os.path.exists(LOGOS_DIR):
-        arquivos = os.listdir(LOGOS_DIR)
+        # PRIORIDADE PARA PNG: Ordena os arquivos para que os PNGs sejam verificados primeiro
+        arquivos = sorted(os.listdir(LOGOS_DIR), key=lambda x: (not x.lower().endswith('.png'), x))
         mont_alvo = limpar_para_comparacao(montadora)
         for arquivo in arquivos:
             if not arquivo.lower().endswith(('.png', '.jpg', '.jpeg', '.webp', '.gif')): continue
@@ -508,22 +509,23 @@ st.markdown("""
     }
     
     .big-hub-btn {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        min-height: 120px; /* ALINHAMENTO FLEXÍVEL: Agora ele expande se precisar */
-        height: 100%;
-        padding: 15px; 
-        box-sizing: border-box; 
-        color: white;
-        border-radius: 15px;
-        box-shadow: 0 4px 10px rgba(0,0,0,0.3);
-        cursor: pointer;
-        transition: transform 0.2s, box-shadow 0.2s;
-        text-align: center;
-        margin-bottom: 20px;
-        overflow: hidden; /* Corta qualquer coisa que tentar vazar */
+        display: flex !important;
+        flex-direction: column !important;
+        align-items: center !important;
+        justify-content: center !important;
+        height: 150px !important; /* ALTURA TRAVADA E FIXA: Todos os botões terão exatos 150px */
+        min-height: 150px !important;
+        max-height: 150px !important;
+        padding: 15px !important; 
+        box-sizing: border-box !important; 
+        color: white !important;
+        border-radius: 15px !important;
+        box-shadow: 0 4px 10px rgba(0,0,0,0.3) !important;
+        cursor: pointer !important;
+        transition: transform 0.2s, box-shadow 0.2s !important;
+        text-align: center !important;
+        margin-bottom: 20px !important;
+        overflow: hidden !important; 
     }
     
     .btn-blue { background: linear-gradient(145deg, #1E88E5, #1565C0); }
@@ -532,12 +534,11 @@ st.markdown("""
     
     .big-hub-btn:hover {
         transform: translateY(-5px);
-        box-shadow: 0 12px 24px rgba(0,0,0,0.4);
+        box-shadow: 0 12px 24px rgba(0,0,0,0.4) !important;
     }
     
-    /* Fontes levemente reduzidas para garantir o encaixe perfeito em qualquer tela */
-    .big-hub-btn h2 { color: white !important; margin: 8px 0 0 0 !important; font-weight: bold; font-size: 1.1rem; line-height: 1.2; word-wrap: break-word; text-transform: uppercase;}
-    .big-hub-btn span { font-size: 2.2rem; line-height: 1;}
+    .big-hub-btn h2 { color: white !important; margin: 8px 0 0 0 !important; font-weight: bold; font-size: 1.2rem !important; line-height: 1.2 !important; word-wrap: break-word; text-transform: uppercase;}
+    .big-hub-btn span { font-size: 2.5rem !important; line-height: 1 !important;}
 
     /* -----------------------------------------------------------
        ESTILIZAÇÃO DO CHIP (BOTÃO LARANJA FLUTUANTE)
@@ -751,8 +752,6 @@ elif st.session_state.app_mode == "EEPROM":
                         if caminho_logo:
                             logo_html_src = obter_image_base64_html(caminho_logo)
                             if logo_html_src:
-                                # SOLUÇÃO DE LOGOS: Fundo #262730 (Dark Mode Escuro)
-                                # Branco no escuro aparece perfeitamente!
                                 st.markdown(f"""
                                     <div style="display: flex; justify-content: center; align-items: center; 
                                                 background-color: #262730; padding: 10px; border-radius: 8px; 
