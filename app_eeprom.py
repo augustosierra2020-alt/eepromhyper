@@ -416,10 +416,12 @@ def abrir_modal_zoom(foto_bytes, legenda_titulo):
 # 7. FUNÇÕES ESPECÍFICAS DA ABA DE GESTÃO DE OS
 # ==========================================
 def calcular_valor_inicial(linha):
-    descricao = str(linha.get("Nome arquivo", "")).upper().strip()
-    veiculo = str(linha.get("Fabricante", "")).upper().strip()
-    descricao = re.sub(r"\s+", " ", descricao)
-    veiculo = re.sub(r"\s+", " ", veiculo)
+    # Procura pelas colunas "Nome arquivo" OU "Descrição", prevenindo planilhas diferentes
+    descricao_crua = linha.get("Nome arquivo", linha.get("Descrição", ""))
+    descricao = str(descricao_crua).upper().strip()
+    
+    veiculo_cru = linha.get("Fabricante", linha.get("Veículo", ""))
+    veiculo = str(veiculo_cru).upper().strip()
 
     termos_mod_off = ["MOD", "OFF"]
     fabricantes_especiais = ["NEW HOLLAND", "VALTRA", "CASE IH", "CASE", "MASSEY FERGUSSON", "MASSEY", "CLAAS", "JHON DEERE", "JOHN DEERE", "DEERE", "FENDT", "JACTO", "DOPPSTADT", "JAN", "VOLVO CONSTRUCTION EQUIPMENT", "VOLVO CONSTRUCTION", "VOLVO CE"]
@@ -427,11 +429,18 @@ def calcular_valor_inicial(linha):
     eh_especial = any(fab in veiculo for fab in fabricantes_especiais)
     if "VOLVO TRUCK" in veiculo: eh_especial = False
 
-    # Regra do P420 (como o texto já sofreu .upper(), ele pega p420, P420, etc.)
-    if "P420" in descricao: return 200
+    has_p420 = bool(re.search(r'P\s*420', descricao))
+    has_mod = "MOD" in descricao
 
-    # Lógica Inteligente para Erros de Digitação do Stage 2 (Ex: STG2, STAG 2, STAAG 2, STAGE 2...)
-    # Regex: S+ (um ou mais S), T+ (um ou mais T), A* (zero ou mais A), G+ (um ou mais G), E* (zero ou mais E), seguido opcionalmente de espaço e 2.
+    # REGRA HIERÁRQUICA 1: Se tiver MOD e P420 juntos, considera Stage 2 (ignora regra dos 200)
+    if has_mod and has_p420:
+        return 1400 if eh_especial else 650
+
+    # REGRA HIERÁRQUICA 2: Se tem APENAS P420 (sem o MOD), cobra 200
+    if has_p420:
+        return 200
+
+    # Demais regras (STG2 escrito errado, etc)
     if re.search(r'S+T+A*G+E*\s*2', descricao): 
         return 1400 if eh_especial else 650
         
@@ -443,12 +452,20 @@ def calcular_valor_inicial(linha):
 def limpar_descricao_os(desc_original):
     desc_upper = str(desc_original).upper().strip()
     
+    # Se achou o P420 no meio do texto original (Ex: MOD OFF p420), preserva ele limpo
+    if re.search(r'P\s*420', desc_upper):
+        if "MOD" in desc_upper and "OFF" in desc_upper: return "MOD OFF P420"
+        if "MOD" in desc_upper: return "MOD P420"
+        if "OFF" in desc_upper: return "OFF P420"
+        return "P420"
+
     # Padroniza visualmente a nomenclatura se encontrar gagueira na digitação do Stage 2
     if re.search(r'S+T+A*G+E*\s*2', desc_upper): 
         return "STAG 2"
         
     elif "MOD" in desc_upper: return "MOD"
     elif "OFF" in desc_upper: return "OFF"
+    
     return desc_original
 
 def higienizar_valor_monetario_para_calculo(val):
