@@ -428,7 +428,7 @@ def calcular_valor_inicial(linha):
     eh_especial = any(fab in veiculo for fab in fabricantes_especiais)
     if "VOLVO TRUCK" in veiculo: eh_especial = False
 
-    # Regex Blindado P420 e P0420: Busca P420, P0420, P 420, P 0420, etc.
+    # Regex Blindado P420 e P0420
     has_p420 = bool(re.search(r'P\s*0?\s*420', descricao))
     has_mod = "MOD" in descricao
 
@@ -446,15 +446,19 @@ def calcular_valor_inicial(linha):
     elif any(termo in descricao for termo in termos_mod_off): 
         return 700 if eh_especial else 350
         
+    # BLINDAGEM: Se for uma planilha filtrada que já contém o "Valor" e não bateu nas regras acima, preserva ele.
+    valor_planilha = linha.get("Valor", None)
+    if pd.notna(valor_planilha) and str(valor_planilha).strip() != "":
+        return valor_planilha
+
     return None
 
 def limpar_descricao_os(desc_original):
     desc_upper = str(desc_original).upper().strip()
     
-    # Se achou o P420/P0420 no texto, formata corretamente na OS
     match_p420 = re.search(r'P\s*0?\s*420', desc_upper)
     if match_p420:
-        codigo_limpo = match_p420.group(0).replace(" ", "") # Remove os espaços, deixando P420 ou P0420
+        codigo_limpo = match_p420.group(0).replace(" ", "") 
         if "MOD" in desc_upper and "OFF" in desc_upper: return f"MOD OFF {codigo_limpo}"
         if "MOD" in desc_upper: return f"MOD {codigo_limpo}"
         if "OFF" in desc_upper: return f"OFF {codigo_limpo}"
@@ -562,13 +566,9 @@ def modificar_modelo_docx(modelo_bytes, flash_point, cliente_nome, cidade, conta
 # ==========================================
 st.markdown("""
     <style>
-    /* Estabilidade de Tela e Correções Gerais */
     html, body, [class*="css"]  { overflow-x: hidden; }
     .block-container { padding-top: 2rem; max-width: 1200px; }
     
-    /* -----------------------------------------------------------
-       ESTILIZAÇÃO DOS BOTÕES GIGANTES (HTML PURO)
-    ----------------------------------------------------------- */
     .big-hub-btn-link {
         text-decoration: none !important;
         display: block !important;
@@ -580,7 +580,7 @@ st.markdown("""
         flex-direction: column !important;
         align-items: center !important;
         justify-content: center !important;
-        height: 150px !important; /* ALTURA TRAVADA E FIXA */
+        height: 150px !important; 
         min-height: 150px !important;
         max-height: 150px !important;
         padding: 15px !important; 
@@ -607,9 +607,6 @@ st.markdown("""
     .big-hub-btn h2 { color: white !important; margin: 8px 0 0 0 !important; font-weight: bold; font-size: 1.2rem !important; line-height: 1.2 !important; word-wrap: break-word; text-transform: uppercase;}
     .big-hub-btn span { font-size: 2.5rem !important; line-height: 1 !important;}
 
-    /* -----------------------------------------------------------
-       ESTILIZAÇÃO DO CHIP (BOTÃO LARANJA FLUTUANTE)
-    ----------------------------------------------------------- */
     div[data-testid="stPopover"] {
         position: fixed !important;
         bottom: 20px !important;
@@ -717,22 +714,19 @@ montadoras_existentes = listar_montadoras()
 # 10. RENDERIZAÇÃO DAS TELAS
 # ==========================================
 if st.session_state.app_mode == "HOME":
-    
     caminho_logo = os.path.join(LOGOS_DIR, "logo.png")
     if os.path.exists(caminho_logo):
         col_logo1, col_logo2, col_logo3 = st.columns([1, 2, 1])
         with col_logo2:
-            try:
-                st.image(caminho_logo, use_container_width=True)
-            except Exception:
-                pass
+            try: st.image(caminho_logo, use_container_width=True)
+            except: pass
         st.markdown("---")
 
     st.markdown("<h1 style='text-align: center; margin-bottom: 50px;'>HyperTork System Hub</h1>", unsafe_allow_html=True)
     
     col1, col2, col3 = st.columns(3)
     with col1:
-        st.markdown(f"""
+        st.markdown("""
             <a href="?page=EEPROM" class="big-hub-btn-link" target="_self">
                 <div class="big-hub-btn btn-blue">
                     <span>⚙️</span>
@@ -740,9 +734,8 @@ if st.session_state.app_mode == "HOME":
                 </div>
             </a>
         """, unsafe_allow_html=True)
-            
     with col2:
-        st.markdown(f"""
+        st.markdown("""
             <a href="?page=OBD2" class="big-hub-btn-link" target="_self">
                 <div class="big-hub-btn btn-red">
                     <span>🚗</span>
@@ -750,9 +743,8 @@ if st.session_state.app_mode == "HOME":
                 </div>
             </a>
         """, unsafe_allow_html=True)
-        
     with col3:
-        st.markdown(f"""
+        st.markdown("""
             <a href="?page=GESTAO_OS" class="big-hub-btn-link" target="_self">
                 <div class="big-hub-btn btn-green">
                     <span>📊</span>
@@ -761,45 +753,22 @@ if st.session_state.app_mode == "HOME":
             </a>
         """, unsafe_allow_html=True)
 
-# ------------------------------------------
-# TELA 1: OBD-II / DTC SCANNERS (BUSCA UNIVERSAL)
-# ------------------------------------------
 elif st.session_state.app_mode == "OBD2":
     st.title("🛠️ Diagnóstico Universal de Falhas (DTC)")
     st.markdown("Busca independente avançada para qualquer veículo ou máquina. **Não necessita de cadastro na aba EEPROM.**")
     
     with st.container(border=True):
         col_cod, col_seg, col_mont, col_mod, col_ano = st.columns([2, 2, 2, 2, 1])
-        
-        with col_cod:
-            codigo_input = st.text_input("Código de Falha", placeholder="Ex: P0001, SPN 3216").strip().upper()
-            
-        with col_seg:
-            opcoes_segmento = [
-                "Geral / Outros", 
-                "Pesado / Caminhão / Ônibus", 
-                "Leve / Carro de Passeio", 
-                "Agrícola / Trator", 
-                "Construção / Linha Amarela", 
-                "Náutica / Marítimo", 
-                "Motos / Quadriciclos"
-            ]
-            segmento_input = st.selectbox("Segmento", opcoes_segmento)
-            
-        with col_mont:
-            mont_input = st.text_input("Marca / Montadora", placeholder="Ex: Volvo, John Deere...").strip()
-            
-        with col_mod:
-            mod_input = st.text_input("Modelo", placeholder="Ex: FH 460, 8R 340...").strip()
-            
-        with col_ano:
-            ano_input = st.text_input("Ano", placeholder="Ex: 2020").strip()
-            
+        with col_cod: codigo_input = st.text_input("Código de Falha", placeholder="Ex: P0001, SPN 3216").strip().upper()
+        with col_seg: segmento_input = st.selectbox("Segmento", ["Geral / Outros", "Pesado / Caminhão / Ônibus", "Leve / Carro de Passeio", "Agrícola / Trator", "Construção / Linha Amarela", "Náutica / Marítimo", "Motos / Quadriciclos"])
+        with col_mont: mont_input = st.text_input("Marca / Montadora", placeholder="Ex: Volvo, John Deere...").strip()
+        with col_mod: mod_input = st.text_input("Modelo", placeholder="Ex: FH 460, 8R 340...").strip()
+        with col_ano: ano_input = st.text_input("Ano", placeholder="Ex: 2020").strip()
         btn_buscar = st.button("🔍 Iniciar Diagnóstico Universal", use_container_width=True, type="primary")
             
     if btn_buscar:
         if codigo_input:
-            with st.spinner(f"Cruzando bancos de dados e manuais de {segmento_input} para {codigo_input}..."):
+            with st.spinner(f"Cruzando bancos de dados..."):
                 descricao_encontrada = diagnostico_avancado_obd2(codigo_input, segmento_input, mont_input, mod_input, ano_input)
                 st.subheader(f"Laudo Técnico: {codigo_input} | {mont_input or 'Marca Não Informada'}")
                 st.info(descricao_encontrada)
@@ -811,21 +780,15 @@ elif st.session_state.app_mode == "OBD2":
     st.divider()
     st.subheader("📚 Histórico de Pesquisas")
     df_historico = carregar_historico_obd2()
-    if not df_historico.empty:
-        st.dataframe(df_historico, use_container_width=True, hide_index=True)
-    else:
-        st.write("Nenhuma falha foi pesquisada ainda.")
+    if not df_historico.empty: st.dataframe(df_historico, use_container_width=True, hide_index=True)
+    else: st.write("Nenhuma falha foi pesquisada ainda.")
 
-# ------------------------------------------
-# TELA 2: GESTÃO EEPROM
-# ------------------------------------------
 elif st.session_state.app_mode == "EEPROM":
     if st.session_state.montadora_selecionada == "":
         st.title("🚜 Painel de Controle - Baias EEPROM")
         st.markdown("### Escolha a Montadora desejada para abrir os modelos")
-        st.write("")
         if not montadoras_existentes:
-            st.info("Nenhuma montadora cadastrada. Fale com o Chip ali no canto inferior direito para criar uma!")
+            st.info("Nenhuma montadora cadastrada. Fale com o Chip para criar uma!")
         else:
             cols = st.columns(4)
             for i, m in enumerate(montadoras_existentes):
@@ -835,20 +798,9 @@ elif st.session_state.app_mode == "EEPROM":
                         if caminho_logo:
                             logo_html_src = obter_image_base64_html(caminho_logo)
                             if logo_html_src:
-                                st.markdown(f"""
-                                    <div style="display: flex; justify-content: center; align-items: center; 
-                                                background-color: #262730; padding: 10px; border-radius: 8px; 
-                                                height: 110px; width: 100%; box-sizing: border-box; margin-bottom: 6px;
-                                                box-shadow: inset 0 0 5px rgba(0,0,0,0.5);">
-                                        <img src="{logo_html_src}" style="max-height: 90px; max-width: 100%; object-fit: contain; filter: drop-shadow(2px 2px 4px rgba(0,0,0,0.6));">
-                                    </div>
-                                """, unsafe_allow_html=True)
+                                st.markdown(f'<div style="display: flex; justify-content: center; align-items: center; background-color: #262730; padding: 10px; border-radius: 8px; height: 110px; width: 100%; box-sizing: border-box; margin-bottom: 6px; box-shadow: inset 0 0 5px rgba(0,0,0,0.5);"><img src="{logo_html_src}" style="max-height: 90px; max-width: 100%; object-fit: contain; filter: drop-shadow(2px 2px 4px rgba(0,0,0,0.6));"></div>', unsafe_allow_html=True)
                         else:
-                            st.markdown(f"""
-                                <div style="display: flex; justify-content: center; align-items: center; height: 110px; width: 100%; margin-bottom: 6px; background-color: #262730; border-radius: 8px; box-shadow: inset 0 0 5px rgba(0,0,0,0.5);">
-                                    <p style='text-align:center; font-weight:bold; color:#1E88E5; margin:0;'>🏭 {m}</p>
-                                </div>
-                            """, unsafe_allow_html=True)
+                            st.markdown(f"<div style='display: flex; justify-content: center; align-items: center; height: 110px; width: 100%; margin-bottom: 6px; background-color: #262730; border-radius: 8px; box-shadow: inset 0 0 5px rgba(0,0,0,0.5);'><p style='text-align:center; font-weight:bold; color:#1E88E5; margin:0;'>🏭 {m}</p></div>", unsafe_allow_html=True)
                         if st.button(f"Abrir {m}", key=f"home_{m}", use_container_width=True):
                             st.session_state.montadora_selecionada = m
                             st.rerun()
@@ -858,19 +810,10 @@ elif st.session_state.app_mode == "EEPROM":
         with col_logo:
             if caminho_da_logo:
                 logo_html_src = obter_image_base64_html(caminho_da_logo)
-                if logo_html_src:
-                    st.markdown(f"""
-                        <div style="display: flex; justify-content: center; align-items: center; 
-                                    background-color: #262730; padding: 6px; border-radius: 8px; height: 75px; width: 75px; box-sizing: border-box;
-                                    box-shadow: inset 0 0 5px rgba(0,0,0,0.5);">
-                            <img src="{logo_html_src}" style="max-height: 60px; max-width: 100%; object-fit: contain; filter: drop-shadow(1px 1px 2px rgba(0,0,0,0.5));">
-                        </div>
-                    """, unsafe_allow_html=True)
+                if logo_html_src: st.markdown(f'<div style="display: flex; justify-content: center; align-items: center; background-color: #262730; padding: 6px; border-radius: 8px; height: 75px; width: 75px; box-sizing: border-box; box-shadow: inset 0 0 5px rgba(0,0,0,0.5);"><img src="{logo_html_src}" style="max-height: 60px; max-width: 100%; object-fit: contain; filter: drop-shadow(1px 1px 2px rgba(0,0,0,0.5));"></div>', unsafe_allow_html=True)
                 else: st.subheader("🏭")
             else: st.subheader("🏭")
-                
-        with col_nome:
-            st.markdown(f"<h1 style='margin-top: 5px; color: #1E88E5;'>{st.session_state.montadora_selecionada}</h1>", unsafe_allow_html=True)
+        with col_nome: st.markdown(f"<h1 style='margin-top: 5px; color: #1E88E5;'>{st.session_state.montadora_selecionada}</h1>", unsafe_allow_html=True)
         st.markdown("---")
 
         modelos_existentes = listar_modelos(st.session_state.montadora_selecionada)
@@ -878,13 +821,10 @@ elif st.session_state.app_mode == "EEPROM":
             st.warning(f"Nenhum veículo cadastrado para a montadora {st.session_state.montadora_selecionada}.")
         else:
             escolha_modelo = st.selectbox("📂 Selecione o Veículo para carregar os gráficos:", [""] + modelos_existentes)
-            st.write("")
             if escolha_modelo:
                 st.markdown(f"#### 📍 Mapa: {st.session_state.montadora_selecionada} {escolha_modelo}")
                 dados_mapa = buscar_dados_veiculo_unificado(st.session_state.montadora_selecionada, escolha_modelo)
-
                 col_info, col_img = st.columns([1, 2])
-                
                 with col_info:
                     with st.container(border=True):
                         st.subheader("📋 Informações Gerais")
@@ -895,163 +835,106 @@ elif st.session_state.app_mode == "EEPROM":
                             st.code(dados_mapa["intervalo"], language="text")
                             st.write("**Detalhes do Veículo:**")
                             st.info(dados_mapa["detalhes"])
-                    
                     with st.container(border=True):
                         st.markdown("⚙️ **Configuração de Mapa**")
                         if dados_mapa:
                             st.write(f"**Valores invertidos:** {dados_mapa.get('valores_invertidos', 'Desativado')}")
                             st.write(f"**Escala:** {dados_mapa.get('escala', '8 bits')}")
-
                 with col_img:
-                    if not dados_mapa or not dados_mapa["graficos"]:
-                        st.error("⚠️ Nenhuma imagem de mapa encontrada para este veículo.")
+                    if not dados_mapa or not dados_mapa["graficos"]: st.error("⚠️ Nenhuma imagem de mapa encontrada.")
                     else:
-                        st.caption("💡 *Dica:* Clique nos botões de Expandir para ver os mapas detalhados em Tela Cheia!")
                         lista_fotos = dados_mapa["graficos"]
                         for idx in range(0, len(lista_fotos), 2):
                             sub_cols = st.columns(2)
                             with sub_cols[0]:
                                 if idx < len(lista_fotos):
-                                    label_cap = f"Gráfico Principal ({idx+1})"
-                                    st.image(lista_fotos[idx], use_container_width=True, caption=label_cap)
-                                    if st.button(f"🔍 Expandir ({idx+1})", key=f"btn_zoom_{idx}", use_container_width=True):
-                                        abrir_modal_zoom(lista_fotos[idx], label_cap)
+                                    st.image(lista_fotos[idx], use_container_width=True, caption=f"Gráfico Principal ({idx+1})")
+                                    if st.button(f"🔍 Expandir ({idx+1})", key=f"btn_zoom_{idx}", use_container_width=True): abrir_modal_zoom(lista_fotos[idx], f"Gráfico Principal ({idx+1})")
                             with sub_cols[1]:
                                 if idx + 1 < len(lista_fotos):
-                                    label_cap_2 = f"Gráfico Complementar ({idx+2})"
-                                    st.image(lista_fotos[idx+1], use_container_width=True, caption=label_cap_2)
-                                    if st.button(f"🔍 Expandir ({idx+2})", key=f"btn_zoom_{idx+1}", use_container_width=True):
-                                        abrir_modal_zoom(lista_fotos[idx+1], label_cap_2)
-                    
-    st.markdown("<br><br>", unsafe_allow_html=True)
+                                    st.image(lista_fotos[idx+1], use_container_width=True, caption=f"Gráfico Complementar ({idx+2})")
+                                    if st.button(f"🔍 Expandir ({idx+2})", key=f"btn_zoom_{idx+1}", use_container_width=True): abrir_modal_zoom(lista_fotos[idx+1], f"Gráfico Complementar ({idx+2})")
 
     with st.expander("➕ CADASTRAR: Adicionar Estruturas Independentes"):
         cad_tab1, cad_tab2 = st.tabs(["🏭 Cadastrar Montadora", "🚗 Cadastrar Veículo"])
         with cad_tab1:
-            st.subheader("Nova Montadora")
             nova_m = st.text_input("Digite o Nome da Montadora", key="input_nova_m").strip()
             if st.button("Efetivar Montadora", type="primary"):
                 if not nova_m: st.error("❌ O campo não pode ficar em branco!")
                 else:
                     m_hig = higienizar_nome(nova_m)
-                    if m_hig in montadoras_existentes: st.error(f"❌ Montadora '{m_hig}' já cadastrada!")
+                    if m_hig in montadoras_existentes: st.error("❌ Montadora já cadastrada!")
                     else:
                         conn = conectar_db(); cursor = conn.cursor()
                         cursor.execute("INSERT INTO montadoras (nome) VALUES (?)", (m_hig,))
-                        conn.commit(); conn.close()
-                        os.makedirs(os.path.join(BASE_DIR, m_hig), exist_ok=True)
-                        backup_local_para_nuvem()
-                        st.success(f"✅ Montadora '{m_hig}' salva no cofre!")
-                        st.rerun()
-                        
+                        conn.commit(); conn.close(); os.makedirs(os.path.join(BASE_DIR, m_hig), exist_ok=True)
+                        backup_local_para_nuvem(); st.success("✅ Salva no cofre!"); st.rerun()
         with cad_tab2:
-            st.subheader("Novo Veículo")
-            if not montadoras_existentes: st.info("Cadastre ao menos uma montadora para liberar.")
+            if not montadoras_existentes: st.info("Cadastre ao menos uma montadora primeiro.")
             else:
                 m_form = st.selectbox("Selecione a Montadora Alvo", montadoras_existentes, key="sb_m_form")
                 v_form = st.text_input("Nome do Modelo / Veículo", key="input_v_form").strip()
                 vc1, vc2 = st.columns(2)
-                v_ini = vc1.text_input("Endereço Inicial", key="ini_v_form")
-                v_int = vc2.text_input("Intervalo de Endereço", key="int_v_form")
-                v_inv = st.selectbox("Valores Invertidos?", ["Desativado", "Ativado"], key="inv_v_form")
-                v_esc = st.selectbox("Escala do Mapa", ["8 bits", "16 bits", "32 bits"], key="esc_v_form")
-                v_det = st.text_area("Detalhes Adicionais", key="det_v_form")
-                v_files = st.file_uploader("Fotos dos Gráficos (Máx 6)", type=["png", "jpg", "jpeg"], accept_multiple_files=True, key="files_v_form")
+                v_ini = vc1.text_input("Endereço Inicial")
+                v_int = vc2.text_input("Intervalo de Endereço")
+                v_inv = st.selectbox("Valores Invertidos?", ["Desativado", "Ativado"])
+                v_esc = st.selectbox("Escala do Mapa", ["8 bits", "16 bits", "32 bits"])
+                v_det = st.text_area("Detalhes Adicionais")
+                v_files = st.file_uploader("Fotos dos Gráficos (Máx 6)", type=["png", "jpg", "jpeg"], accept_multiple_files=True)
                 if st.button("Efetivar Veículo", type="primary"):
                     v_hig = higienizar_nome(v_form)
-                    if not v_form: st.error("❌ O nome do veículo é obrigatório!")
+                    if not v_form: st.error("❌ O nome é obrigatório!")
                     else:
-                        modelos_da_marca = listar_modelos(m_form)
-                        if v_hig in modelos_da_marca: st.error(f"❌ Veículo '{v_hig}' já existe na {m_form}!")
+                        if v_hig in listar_modelos(m_form): st.error("❌ Veículo já existe na marca!")
                         else:
-                            status_save = salvar_novo_veiculo_hibrido(m_form, v_form, v_ini, v_int, v_det, v_inv, v_esc, v_files)
-                            if status_save:
-                                st.success(f"✅ Ficha técnica '{v_hig}' sincronizada!")
-                                st.rerun()
+                            if salvar_novo_veiculo_hibrido(m_form, v_form, v_ini, v_int, v_det, v_inv, v_esc, v_files): st.success("✅ Sincronizada!"); st.rerun()
 
     with st.expander("⚙️ GERENCIAR: Painel de Edição e Exclusão Total"):
         ger_tab1, ger_tab2 = st.tabs(["🏭 Gerenciar Montadoras", "🚗 Gerenciar Veículos"])
         with ger_tab1:
-            st.subheader("Modificação de Marcas")
-            if not montadoras_existentes: st.warning("Nenhuma montadora localizada.")
-            else:
-                m_select_edit = st.selectbox("Escolha a Montadora para Alterar", montadoras_existentes, key="sb_m_edit_pane")
-                novo_nome_m = st.text_input("Alterar Nome da Montadora para:", value=m_select_edit, key="txt_rename_m").strip()
-                m_ed_col1, m_ed_col2 = st.columns(2)
-                if m_ed_col1.button("💾 Salvar Novo Nome", key="btn_rename_m"):
-                    n_m_hig = higienizar_nome(novo_nome_m)
-                    if not n_m_hig: st.error("❌ Nome inválido.")
-                    elif n_m_hig in montadoras_existentes and n_m_hig != m_select_edit: st.error("❌ Já existe!")
-                    else:
-                        conn = conectar_db(); cursor = conn.cursor()
-                        cursor.execute("UPDATE montadoras SET nome = ? WHERE nome = ?", (n_m_hig, m_select_edit))
-                        cursor.execute("UPDATE veiculos SET montadora_nome = ? WHERE montadora_nome = ?", (n_m_hig, m_select_edit))
-                        conn.commit(); conn.close()
-                        old_path = os.path.join(BASE_DIR, m_select_edit)
-                        new_path = os.path.join(BASE_DIR, n_m_hig)
-                        if os.path.exists(old_path): os.rename(old_path, new_path)
-                        backup_local_para_nuvem()
-                        st.success("✅ Nome atualizado globalmente!")
-                        st.session_state.montadora_selecionada = ""
-                        st.rerun()
-                if m_ed_col2.button("🗑️ Excluir Montadora", key="btn_del_m_pane"):
-                    excluir_montadora_db(m_select_edit)
-                    st.success(f"✅ Limpeza concluída e Nuvem sincronizada.")
-                    st.session_state.montadora_selecionada = ""
-                    st.rerun()
-
+            m_select_edit = st.selectbox("Escolha a Montadora para Alterar", montadoras_existentes, key="sb_m_edit_pane")
+            novo_nome_m = st.text_input("Alterar Nome da Montadora para:", value=m_select_edit).strip()
+            m_ed_col1, m_ed_col2 = st.columns(2)
+            if m_ed_col1.button("💾 Salvar Novo Nome"):
+                n_m_hig = higienizar_nome(novo_nome_m)
+                if n_m_hig and (n_m_hig == m_select_edit or n_m_hig not in montadoras_existentes):
+                    conn = conectar_db(); cursor = conn.cursor()
+                    cursor.execute("UPDATE montadoras SET nome = ? WHERE nome = ?", (n_m_hig, m_select_edit))
+                    cursor.execute("UPDATE veiculos SET montadora_nome = ? WHERE montadora_nome = ?", (n_m_hig, m_select_edit))
+                    conn.commit(); conn.close()
+                    try: os.rename(os.path.join(BASE_DIR, m_select_edit), os.path.join(BASE_DIR, n_m_hig))
+                    except: pass
+                    backup_local_para_nuvem(); st.success("✅ Atualizado!"); st.session_state.montadora_selecionada = ""; st.rerun()
+            if m_ed_col2.button("🗑️ Excluir Montadora"): excluir_montadora_db(m_select_edit); st.session_state.montadora_selecionada = ""; st.rerun()
         with ger_tab2:
-            st.subheader("Edição Completa de Veículos")
-            if not montadoras_existentes: st.warning("Sem marcas salvas.")
-            else:
-                m_sel_v = st.selectbox("Filtrar por Montadora", montadoras_existentes, key="sb_m_sel_v")
-                v_existentes = listar_modelos(m_sel_v)
-                if not v_existentes: st.info("Nenhum veículo localizado nesta marca.")
-                else:
-                    v_sel_edit = st.selectbox("Selecione o Veículo", v_existentes, key="sb_v_sel_edit")
-                    dados_v = buscar_dados_veiculo_unificado(m_sel_v, v_sel_edit)
-                    if dados_v:
-                        st.markdown("---")
-                        v_novo_nome = st.text_input("Alterar Nome do Veículo", value=v_sel_edit, key="txt_v_name_edit").strip()
-                        ve_c1, ve_c2 = st.columns(2)
-                        v_novo_ini = ve_c1.text_input("Alterar Endereço Inicial", value=dados_v["posicao_inicio"], key="txt_v_ini_edit")
-                        v_novo_int = ve_c2.text_input("Alterar Intervalo", value=dados_v["intervalo"], key="txt_v_int_edit")
-                        ve_c3, ve_c4 = st.columns(2)
-                        inv_idx = 0 if dados_v["valores_invertidos"] == "Desativado" else 1
-                        v_novo_inv = ve_c3.selectbox("Valores Invertidos?", ["Desativado", "Ativado"], index=inv_idx, key="sb_v_inv_edit")
-                        esc_opcoes = ["8 bits", "16 bits", "32 bits"]
-                        esc_idx = esc_opcoes.index(dados_v["escala"]) if dados_v["escala"] in esc_opcoes else 0
-                        v_novo_esc = ve_c4.selectbox("Escala do Mapa", esc_opcoes, index=esc_idx, key="sb_v_esc_edit")
-                        v_novo_det = st.text_area("Alterar Detalhes do Veículo", value=dados_v["detalhes"], key="txt_v_det_edit")
-                        st.warning("⚠️ Novas fotos substituirão todas as imagens antigas!")
-                        v_novas_fotos = st.file_uploader("Substituir Imagens (Máx 6)", type=["png", "jpg", "jpeg"], accept_multiple_files=True, key="files_v_edit")
-                        v_manage_col1, v_manage_col2 = st.columns(2)
-                        if v_manage_col1.button("💾 Salvar Alterações", type="primary", key="btn_save_v_edit"):
-                            n_v_hig = higienizar_nome(v_novo_nome)
-                            if not n_v_hig: st.error("❌ O nome não pode ser vazio.")
-                            else:
-                                if n_v_hig != v_sel_edit and n_v_hig in v_existentes: st.error("❌ Já existe outro modelo com esse nome!")
-                                else:
-                                    if n_v_hig != v_sel_edit:
-                                        velha_pasta = os.path.join(BASE_DIR, m_sel_v, v_sel_edit)
-                                        if os.path.exists(velha_pasta): shutil.rmtree(velha_pasta)
-                                        conn = conectar_db(); cursor = conn.cursor()
-                                        cursor.execute("UPDATE veiculos SET modelo = ? WHERE id = ?", (n_v_hig, dados_v["id"]))
-                                        conn.commit(); conn.close()
-                                    if n_v_hig != v_sel_edit and not v_novas_fotos:
-                                        salvar_novo_veiculo_hibrido(m_sel_v, n_v_hig, v_novo_ini, v_novo_int, v_novo_det, v_novo_inv, v_novo_esc, None)
-                                        sincronizar_banco_com_pastas()
-                                    else:
-                                        salvar_novo_veiculo_hibrido(m_sel_v, n_v_hig, v_novo_ini, v_novo_int, v_novo_det, v_novo_inv, v_novo_esc, v_novas_fotos)
-                                    st.success(f"✅ Sucesso: Sincronizado com estabilidade!")
-                                    st.rerun()
-                        if v_manage_col2.button("🗑️ Excluir Veículo", key="btn_del_v_edit"):
-                            excluir_veiculo_db(m_sel_v, v_sel_edit)
-                            st.success(f"✅ Remoção Concluída!")
-                            st.rerun()
+            m_sel_v = st.selectbox("Filtrar por Montadora", montadoras_existentes, key="sb_m_sel_v")
+            v_existentes = listar_modelos(m_sel_v)
+            if v_existentes:
+                v_sel_edit = st.selectbox("Selecione o Veículo", v_existentes)
+                dados_v = buscar_dados_veiculo_unificado(m_sel_v, v_sel_edit)
+                if dados_v:
+                    v_novo_nome = st.text_input("Alterar Nome do Veículo", value=v_sel_edit).strip()
+                    ve_c1, ve_c2 = st.columns(2)
+                    v_novo_ini = ve_c1.text_input("Alterar Endereço Inicial", value=dados_v["posicao_inicio"])
+                    v_novo_int = ve_c2.text_input("Alterar Intervalo", value=dados_v["intervalo"])
+                    v_novo_det = st.text_area("Alterar Detalhes", value=dados_v["detalhes"])
+                    v_novas_fotos = st.file_uploader("Substituir Imagens (Máx 6)", type=["png", "jpg", "jpeg"], accept_multiple_files=True, key="files_v_edit")
+                    v_manage_col1, v_manage_col2 = st.columns(2)
+                    if v_manage_col1.button("💾 Salvar Alterações Veículo", type="primary"):
+                        n_v_hig = higienizar_nome(v_novo_nome)
+                        if n_v_hig:
+                            if n_v_hig != v_sel_edit:
+                                try: shutil.rmtree(os.path.join(BASE_DIR, m_sel_v, v_sel_edit))
+                                except: pass
+                                conn = conectar_db(); cursor = conn.cursor()
+                                cursor.execute("UPDATE veiculos SET modelo = ? WHERE id = ?", (n_v_hig, dados_v["id"]))
+                                conn.commit(); conn.close()
+                            salvar_novo_veiculo_hibrido(m_sel_v, n_v_hig, v_novo_ini, v_novo_int, v_novo_det, dados_v["valores_invertidos"], dados_v["escala"], v_novas_fotos)
+                            st.success("✅ Alterações salvas!"); st.rerun()
+                    if v_manage_col2.button("🗑️ Excluir Veículo"): excluir_veiculo_db(m_sel_v, v_sel_edit); st.rerun()
 
 # ------------------------------------------
-# TELA 3: GESTÃO DE SERVIÇOS E OS
+# TELA 3: GESTÃO DE SERVIÇOS E OS (HUB 4.4)
 # ------------------------------------------
 elif st.session_state.app_mode == "GESTAO_OS":
     st.title("📊 Gestão de Serviços & Emissão de OS")
@@ -1061,7 +944,7 @@ elif st.session_state.app_mode == "GESTAO_OS":
 
     with aba1:
         arquivo_carregado = st.file_uploader(
-            "Arraste ou selecione a planilha FPF_List para iniciar:",
+            "Arraste ou selecione a planilha FPF_List ou Planilha Filtrada para iniciar:",
             type=["xlsx", "xls", "csv"],
             key="uploader_planilha"
         )
@@ -1072,16 +955,12 @@ elif st.session_state.app_mode == "GESTAO_OS":
                 try:
                     excel_file = pd.ExcelFile(io.BytesIO(conteudo))
                     abas = excel_file.sheet_names
-                    if len(abas) > 1:
-                        aba_selecionada = st.selectbox("Selecione a aba com os dados:", abas, key="selecao_abas_app")
-                    else:
-                        aba_selecionada = abas[0]
+                    aba_selecionada = st.selectbox("Selecione a aba com os dados:", abas, key="selecao_abas_app") if len(abas) > 1 else abas[0]
                     df = pd.read_excel(io.BytesIO(conteudo), sheet_name=aba_selecionada)
                 except Exception:
                     try:
                         df = pd.read_csv(io.BytesIO(conteudo), sep=";", encoding="utf-8")
-                        if df.shape[1] <= 1:
-                            df = pd.read_csv(io.BytesIO(conteudo), sep=",", encoding="utf-8")
+                        if df.shape[1] <= 1: df = pd.read_csv(io.BytesIO(conteudo), sep=",", encoding="utf-8")
                     except Exception:
                         df = pd.read_csv(io.BytesIO(conteudo), sep=";", encoding="iso-8859-1")
 
@@ -1090,35 +969,33 @@ elif st.session_state.app_mode == "GESTAO_OS":
                 else:
                     df.columns = df.columns.str.strip()
                     
-                    # BLINDAGEM 1: Corrige variações de nome da coluna do Flash Point vindos da planilha
-                    for col in df.columns:
+                    # Padroniza variações de Flash Point direto na raiz da leitura
+                    for col in list(df.columns):
                         if str(col).upper().replace(" ", "") == "FLASHPOINT":
-                            df.rename(columns={col: "FlashPoint"}, inplace=True)
+                            df.rename(columns={col: "Flash Point"}, inplace=True)
 
+                    # Se a planilha for no modelo bruto original (que tem coluna 'T'), faz o filtro de MOD
                     if "T" in df.columns:
                         df["T"] = df["T"].astype(str).str.strip()
                         df_filtrado = df[df["T"] == "MOD"].copy()
                     else:
-                        st.warning("Aviso: A coluna 'T' não foi encontrada. Prosseguindo sem filtrar.")
+                        st.info("💡 Coluna de filtro 'T' não localizada. O sistema assume que a planilha já está filtrada.")
                         df_filtrado = df.copy()
 
-                    # BLINDAGEM 2: Ampliando a rede para aceitar os nomes antigos e os nomes já corrigidos
-                    colunas_originais = ["Arquivo ID", "Fabricante", "Matrícula", "FlashPoint", "Cliente", "Nome arquivo", "Descrição", "Dada", "Data"]
-                    colunas_existentes = [col for col in colunas_originais if col in df_filtrado.columns]
-                    df_filtrado = df_filtrado[colunas_existentes].copy()
-
-                    df_filtrado["Valor"] = df_filtrado.apply(calcular_valor_inicial, axis=1)
-
+                    # Traduz os nomes antigos das colunas para o Padrão Final Novo se existirem
                     dicionario_renomear = {
                         "Arquivo ID": "Nº Mapa",
                         "Fabricante": "Veículo",
                         "Matrícula": "Placa",
                         "Nome arquivo": "Descrição",
-                        "Dada": "Data",
-                        "FlashPoint": "Flash Point",
+                        "Dada": "Data"
                     }
-                    df_filtrado = df_filtrado.rename(columns=dicionario_renomear)
+                    df_filtrado.rename(columns=dicionario_renomear, inplace=True)
 
+                    # Aplica a inteligência de cálculo (hierarquia de regras para P420 / P0420 / STAG 2)
+                    df_filtrado["Valor"] = df_filtrado.apply(calcular_valor_inicial, axis=1)
+
+                    # Isola com segurança as colunas obrigatórias para a Ordem de Serviço final
                     ordem_solicitada = ["Nº Mapa", "Data", "Veículo", "Placa", "Flash Point", "Cliente", "Descrição", "Valor"]
                     colunas_finais = [col for col in ordem_solicitada if col in df_filtrado.columns]
                     df_filtrado = df_filtrado[colunas_finais].copy()
@@ -1150,8 +1027,7 @@ elif st.session_state.app_mode == "GESTAO_OS":
                                     linha_dict["Valor"] = None
                                     linhas_amarelas.append(contador_linha_excel)
                                 else:
-                                    if placa_atual != "":
-                                        placas_vistas.add(placa_atual)
+                                    if placa_atual != "": placas_vistas.add(placa_atual)
 
                                 lista_linhas.append(linha_dict)
                                 contador_linha_excel += 1
@@ -1161,8 +1037,7 @@ elif st.session_state.app_mode == "GESTAO_OS":
 
                             linha_total = {col: "" for col in colunas_finais}
                             linha_total["Flash Point"] = fp
-                            if "Cliente" in linha_total:
-                                linha_total["Cliente"] = str(bloco.iloc[0].get("Cliente", ""))
+                            if "Cliente" in linha_total: linha_total["Cliente"] = str(bloco.iloc[0].get("Cliente", ""))
                             linha_total["Descrição"] = "VALOR TOTAL:"
                             linha_total["Valor"] = float(soma_bloco) if soma_bloco > 0 else ""
 
@@ -1174,8 +1049,7 @@ elif st.session_state.app_mode == "GESTAO_OS":
                             lista_linhas.append(linha_espacamento)
                             contador_linha_excel += 1
 
-                        if lista_linhas:
-                            lista_linhas.pop()
+                        if lista_linhas: lista_linhas.pop()
 
                         df_excel_final = pd.DataFrame(lista_linhas, columns=colunas_finais)
 
@@ -1185,22 +1059,16 @@ elif st.session_state.app_mode == "GESTAO_OS":
                         buffer = io.BytesIO()
                         with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
                             df_excel_final.to_excel(writer, index=False, sheet_name="FPF Realizados")
-
-                            workbook = writer.book
                             worksheet = writer.sheets["FPF Realizados"]
-
                             amarelo_claro = PatternFill(start_color="FFFFCC", end_color="FFFFCC", fill_type="solid")
                             laranja_claro = PatternFill(start_color="FFE6CC", end_color="FFE6CC", fill_type="solid")
 
                             for num_linha in linhas_amarelas:
-                                for col_idx in range(1, len(colunas_finais) + 1):
-                                    worksheet.cell(row=num_linha, column=col_idx).fill = amarelo_claro
-
+                                for col_idx in range(1, len(colunas_finais) + 1): worksheet.cell(row=num_linha, column=col_idx).fill = amarelo_claro
                             for num_linha in linhas_laranjas:
-                                for col_idx in range(1, len(colunas_finais) + 1):
-                                    worksheet.cell(row=num_linha, column=col_idx).fill = laranja_claro
+                                for col_idx in range(1, len(colunas_finais) + 1): worksheet.cell(row=num_linha, column=col_idx).fill = laranja_claro
 
-                        st.success("Planilha processada com sucesso na memória! Vá para a aba ao lado para gerar Ordens de Serviço.")
+                        st.success("Planilha unificada processada com sucesso! Prossiga para gerar a Ordem de Serviço.")
                         st.download_button(
                             label="📥 Baixar Planilha Processada (Excel)",
                             data=buffer.getvalue(),
@@ -1208,7 +1076,7 @@ elif st.session_state.app_mode == "GESTAO_OS":
                             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                         )
                     else:
-                        st.warning("⚠️ Planilha lida, mas a coluna de 'Flash Point' não foi detectada com dados válidos para fatiamento.")
+                        st.warning("⚠️ Planilha lida, mas a coluna de 'Flash Point' não foi detectada com dados válidos.")
             except Exception as e:
                 st.error(f"Erro crítico no processamento: {e}")
 
@@ -1222,9 +1090,9 @@ elif st.session_state.app_mode == "GESTAO_OS":
         )
         
         if st.session_state.df_filtrado is None or st.session_state.df_filtrado.empty:
-            st.info("Aguardando o upload e processamento da planilha FPF_List na primeira aba para liberar o emissor.")
+            st.info("Aguardando o upload e processamento da planilha na aba anterior.")
         elif modelo_word_carregado is None:
-            st.warning("Por favor, anexe o arquivo original do seu modelo acima para habilitar o preenchimento automático.")
+            st.warning("Por favor, anexe o arquivo original do seu modelo de OS acima.")
         else:
             df_base_os = st.session_state.df_filtrado
             bytes_modelo = modelo_word_carregado.read()
@@ -1250,7 +1118,7 @@ elif st.session_state.app_mode == "GESTAO_OS":
                         flash_point_confirmacao = st.text_input("Flash Point Relacionado:", value=fp_selecionado, disabled=True)
                         contato_input = st.text_input("Contato (Adicionar a critério do usuário):", placeholder="Ex: (45) 99999-9999")
                         
-                    st.write("✏️ **Edite a tabela abaixo antes de gerar o Word:** (Você pode alterar textos, adicionar `+` ou remover linhas diretamente na tela)")
+                    st.write("✏️ **Edite a tabela abaixo antes de gerar o Word:**")
                     
                     linhas_os_finais = []
                     placas_vistas_os = set()
@@ -1258,85 +1126,51 @@ elif st.session_state.app_mode == "GESTAO_OS":
                     for idx, row in dados_bloco.iterrows():
                         row_dict = row.to_dict()
                         placa = str(row_dict.get("Placa", "")).strip()
-                        
-                        if placa in placas_vistas_os and placa != "":
-                            row_dict["Valor"] = None
+                        if placa in placas_vistas_os and placa != "": row_dict["Valor"] = None
                         else:
-                            if placa != "":
-                                placas_vistas_os.add(placa)
-                        
+                            if placa != "": placas_vistas_os.add(placa)
                         linhas_os_finais.append(row_dict)
                         
                     df_preview_os = pd.DataFrame(linhas_os_finais)
                     df_preview_os = df_preview_os[df_preview_os["Valor"].notna()].copy()
                     
-                    # BLINDAGEM 3: Verifica se a coluna Descrição sobreviveu antes de formatá-la
-                    if "Descrição" in df_preview_os.columns:
-                        df_preview_os["Descrição"] = df_preview_os["Descrição"].apply(limpar_descricao_os)
-                    else:
-                        df_preview_os["Descrição"] = ""
+                    if "Descrição" in df_preview_os.columns: df_preview_os["Descrição"] = df_preview_os["Descrição"].apply(limpar_descricao_os)
+                    else: df_preview_os["Descrição"] = ""
                     
                     colunas_preview_os = ["Nº Mapa", "Data", "Veículo", "Placa", "Descrição", "Valor"]
                     colunas_preview_existentes = [c for c in colunas_preview_os if c in df_preview_os.columns]
                     
-                    df_editado = st.data_editor(
-                        df_preview_os[colunas_preview_existentes],
-                        num_rows="dynamic",
-                        use_container_width=True,
-                        key=f"editor_os_{fp_selecionado}"
-                    )
-                    
+                    df_editado = st.data_editor(df_preview_os[colunas_preview_existentes], num_rows="dynamic", use_container_width=True, key=f"editor_os_{fp_selecionado}")
                     soma_total_os = df_editado["Valor"].apply(higienizar_valor_monetario_para_calculo).sum()
                     
-                    st.metric(label="Valor Total Consolidado da OS (Baseado na tabela acima)", value=f"R$ {soma_total_os:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
+                    st.metric(label="Valor Total Consolidado da OS", value=f"R$ {soma_total_os:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
                     
                     if st.button("🚀 Preencher e Gerar Ordem de Serviço"):
                         linhas_tabela_editadas = df_editado.to_dict(orient="records")
-                        
-                        arquivo_word_final = modificar_modelo_docx(
-                            modelo_bytes=bytes_modelo,
-                            flash_point=fp_selecionado,
-                            cliente_nome=nome_cliente_input,
-                            cidade=cidade_input,
-                            contato=contato_input,
-                            linhas_tabela=linhas_tabela_editadas,
-                            total_valor=soma_total_os
-                        )
+                        arquivo_word_final = modificar_modelo_docx(modelo_bytes=bytes_modelo, flash_point=fp_selecionado, cliente_nome=nome_cliente_input, cidade=cidade_input, contato=contato_input, linhas_tabela=linhas_tabela_editadas, total_valor=soma_total_os)
                         
                         st.success(f"Ordem de Serviço para o Flash Point {fp_selecionado} gerada com sucesso!")
-                        
-                        st.download_button(
-                            label="📥 Baixar Ordem de Serviço Pronta (.docx)",
-                            data=arquivo_word_final.getvalue(),
-                            file_name=f"OS_Hyper_Tork_{fp_selecionado}.docx",
-                            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                        )
+                        st.download_button(label="📥 Baixar Ordem de Serviço Pronta (.docx)", data=arquivo_word_final.getvalue(), file_name=f"OS_Hyper_Tork_{fp_selecionado}.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
 
 # ==========================================
 # 11. CHIP POP-UP FLUTUANTE (BOTÃO LARANJA)
 # ==========================================
 with st.popover("🤖"):
     st.markdown("#### 💬 Chip - IA")
-    
     chat_container = st.container(height=350)
     with chat_container:
         for msg in st.session_state.chat_historico:
-            with st.chat_message(msg["role"]):
-                st.markdown(msg["content"])
+            with st.chat_message(msg["role"]): st.markdown(msg["content"])
                 
     with st.form("chip_chat_form", clear_on_submit=True):
         cols = st.columns([7, 3])
-        with cols[0]:
-            prompt = st.text_input("Mensagem", label_visibility="collapsed", placeholder="Digite algo...")
-        with cols[1]:
-            submit = st.form_submit_button("Enviar", use_container_width=True)
-        
+        with cols[0]: prompt = st.text_input("Mensagem", label_visibility="collapsed", placeholder="Digite algo...")
+        with cols[1]: submit = st.form_submit_button("Enviar", use_container_width=True)
         if submit and prompt.strip():
             if prompt.strip().lower() in ["/limpar", "limpar chat"]:
                 st.session_state.chat_historico = [{"role": "assistant", "content": "Oi! Eu sou o Chip, como posso ajudar?"}]
                 st.rerun()
             else:
                 st.session_state.chat_historico.append({"role": "user", "content": prompt})
-                resposta = processar_linguagem_chip(prompt)
-                st.session_state.chat_historico.append({"role": "assistant", "content": resposta})
+                st.session_state.chat_historico.append({"role": "assistant", "content": processar_linguagem_chip(prompt)})
                 st.rerun()
