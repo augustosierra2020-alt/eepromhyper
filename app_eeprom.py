@@ -213,7 +213,6 @@ def diagnostico_avancado_obd2(codigo, segmento="", montadora="", modelo="", ano=
     search_results = ""
     try:
         with DDGS() as ddgs:
-            # OTIMIZAÇÃO DE VELOCIDADE: Reduzido para 3 resultados mais relevantes
             resultados = list(ddgs.text(query, max_results=3))
             for r in resultados: search_results += f"- {r['body']}\n"
     except Exception:
@@ -249,7 +248,7 @@ def diagnostico_avancado_obd2(codigo, segmento="", montadora="", modelo="", ano=
                 model="Qwen/Qwen2.5-7B-Instruct",
                 messages=[{"role": "user", "content": prompt_ia}],
                 max_tokens=850, 
-                temperature=0.2 # OTIMIZAÇÃO: Menos "criatividade", mais velocidade e precisão direta
+                temperature=0.2 
             )
             return completude.choices[0].message.content.strip()
         except Exception as e:
@@ -428,6 +427,9 @@ def calcular_valor_inicial(linha):
 
     eh_especial = any(fab in veiculo for fab in fabricantes_especiais)
     if "VOLVO TRUCK" in veiculo: eh_especial = False
+
+    # NOVA REGRA: P420 custa 200
+    if "P420" in descricao: return 200
 
     if any(termo in descricao for termo in termos_stg2): return 1400 if eh_especial else 650
     elif any(termo in descricao for termo in termos_mod_off): return 700 if eh_especial else 350
@@ -1189,11 +1191,10 @@ elif st.session_state.app_mode == "GESTAO_OS":
                 flash_point_confirmacao = st.text_input("Flash Point Relacionado:", value=fp_selecionado, disabled=True)
                 contato_input = st.text_input("Contato (Adicionar a critério do usuário):", placeholder="Ex: (45) 99999-9999")
                 
-            st.write("### Serviços com Valores Definidos que farão parte desta OS (Linhas vazias serão excluídas do Word):")
+            st.write("✏️ **Edite a tabela abaixo antes de gerar o Word:** (Você pode alterar textos, adicionar `+` ou remover linhas diretamente na tela)")
             
             linhas_os_finais = []
             placas_vistas_os = set()
-            soma_total_os = 0
             
             for idx, row in dados_bloco.iterrows():
                 row_dict = row.to_dict()
@@ -1204,8 +1205,6 @@ elif st.session_state.app_mode == "GESTAO_OS":
                 else:
                     if placa != "":
                         placas_vistas_os.add(placa)
-                    if row_dict["Valor"] is not None and str(row_dict["Valor"]).lower() != "nan" and not pd.isna(row_dict["Valor"]):
-                        soma_total_os += float(row_dict["Valor"])
                 
                 linhas_os_finais.append(row_dict)
                 
@@ -1215,18 +1214,31 @@ elif st.session_state.app_mode == "GESTAO_OS":
             
             colunas_preview_os = ["Nº Mapa", "Data", "Veículo", "Placa", "Descrição", "Valor"]
             colunas_preview_existentes = [c for c in colunas_preview_os if c in df_preview_os.columns]
-            st.dataframe(df_preview_os[colunas_preview_existentes])
             
-            st.metric(label="Valor Total Consolidado da OS (Apenas linhas válidas)", value=f"R$ {soma_total_os:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
+            # Editor de Dados Interativo (Data Editor)
+            df_editado = st.data_editor(
+                df_preview_os[colunas_preview_existentes],
+                num_rows="dynamic",
+                use_container_width=True,
+                key=f"editor_os_{fp_selecionado}"
+            )
+            
+            # Recalcula a soma TOTAL baseada na tabela que o usuário acabou de editar!
+            soma_total_os = pd.to_numeric(df_editado["Valor"], errors='coerce').sum()
+            
+            st.metric(label="Valor Total Consolidado da OS (Baseado na tabela acima)", value=f"R$ {soma_total_os:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
             
             if st.button("🚀 Preencher e Gerar Ordem de Serviço"):
+                # Transforma o DataFrame editado de volta num formato que o gerador do Word entenda
+                linhas_tabela_editadas = df_editado.to_dict(orient="records")
+                
                 arquivo_word_final = modificar_modelo_docx(
                     modelo_bytes=bytes_modelo,
                     flash_point=fp_selecionado,
                     cliente_nome=nome_cliente_input,
                     cidade=cidade_input,
                     contato=contato_input,
-                    linhas_tabela=linhas_os_finais,
+                    linhas_tabela=linhas_tabela_editadas,
                     total_valor=soma_total_os
                 )
                 
