@@ -934,7 +934,7 @@ elif st.session_state.app_mode == "EEPROM":
                     if v_manage_col2.button("🗑️ Excluir Veículo"): excluir_veiculo_db(m_sel_v, v_sel_edit); st.rerun()
 
 # ------------------------------------------
-# TELA 3: GESTÃO DE SERVIÇOS E OS (HUB 4.4)
+# TELA 3: GESTÃO DE SERVIÇOS E OS (HUB 4.6)
 # ------------------------------------------
 elif st.session_state.app_mode == "GESTAO_OS":
     st.title("📊 Gestão de Serviços & Emissão de OS")
@@ -969,20 +969,10 @@ elif st.session_state.app_mode == "GESTAO_OS":
                 else:
                     df.columns = df.columns.str.strip()
                     
-                    # Padroniza variações de Flash Point direto na raiz da leitura
                     for col in list(df.columns):
                         if str(col).upper().replace(" ", "") == "FLASHPOINT":
                             df.rename(columns={col: "Flash Point"}, inplace=True)
 
-                    # Se a planilha for no modelo bruto original (que tem coluna 'T'), faz o filtro de MOD
-                    if "T" in df.columns:
-                        df["T"] = df["T"].astype(str).str.strip()
-                        df_filtrado = df[df["T"] == "MOD"].copy()
-                    else:
-                        st.info("💡 Coluna de filtro 'T' não localizada. O sistema assume que a planilha já está filtrada.")
-                        df_filtrado = df.copy()
-
-                    # Traduz os nomes antigos das colunas para o Padrão Final Novo se existirem
                     dicionario_renomear = {
                         "Arquivo ID": "Nº Mapa",
                         "Fabricante": "Veículo",
@@ -990,19 +980,35 @@ elif st.session_state.app_mode == "GESTAO_OS":
                         "Nome arquivo": "Descrição",
                         "Dada": "Data"
                     }
-                    df_filtrado.rename(columns=dicionario_renomear, inplace=True)
+                    df.rename(columns=dicionario_renomear, inplace=True)
 
-                    # Aplica a inteligência de cálculo (hierarquia de regras para P420 / P0420 / STAG 2)
+                    # BLINDAGEM ANTI-DUPLICAÇÃO: Deleta qualquer linha de "VALOR TOTAL"
+                    if "Descrição" in df.columns:
+                        df = df[~df["Descrição"].astype(str).str.upper().str.contains("VALOR TOTAL", na=False)].copy()
+
+                    if "T" in df.columns:
+                        df["T"] = df["T"].astype(str).str.strip()
+                        df_filtrado = df[df["T"] == "MOD"].copy()
+                    else:
+                        st.info("💡 Coluna de filtro 'T' não localizada. O sistema assume que a planilha já está filtrada e limpa.")
+                        df_filtrado = df.copy()
+
                     df_filtrado["Valor"] = df_filtrado.apply(calcular_valor_inicial, axis=1)
 
-                    # Isola com segurança as colunas obrigatórias para a Ordem de Serviço final
                     ordem_solicitada = ["Nº Mapa", "Data", "Veículo", "Placa", "Flash Point", "Cliente", "Descrição", "Valor"]
                     colunas_finais = [col for col in ordem_solicitada if col in df_filtrado.columns]
                     df_filtrado = df_filtrado[colunas_finais].copy()
 
                     if "Data" in df_filtrado.columns:
-                        df_filtrado["Data"] = pd.to_datetime(df_filtrado["Data"], errors='coerce')
-                        df_filtrado["Data"] = df_filtrado["Data"].dt.strftime('%d/%m/%Y').fillna("")
+                        # BLINDAGEM DA DATA: Evita inversão de Mês/Dia e impede que datas sumam
+                        datas_originais = df_filtrado["Data"].astype(str).replace("nan", "").replace("NaT", "").str.strip()
+                        
+                        # Converte forçando o padrão brasileiro (dia primeiro: DD/MM/YYYY)
+                        datas_convertidas = pd.to_datetime(df_filtrado["Data"], dayfirst=True, errors='coerce')
+                        
+                        # Aplica o formato correto. Onde falhou, volta o texto original em vez de apagar
+                        df_filtrado["Data"] = datas_convertidas.dt.strftime('%d/%m/%Y')
+                        df_filtrado["Data"] = df_filtrado["Data"].fillna(datas_originais)
 
                     if "Flash Point" in df_filtrado.columns:
                         df_filtrado["Flash Point"] = df_filtrado["Flash Point"].astype(str).str.strip()
