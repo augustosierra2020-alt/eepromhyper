@@ -1102,7 +1102,8 @@ elif st.session_state.app_mode == "GESTAO_OS":
                         st.warning("Aviso: A coluna 'T' não foi encontrada. Prosseguindo sem filtrar.")
                         df_filtrado = df.copy()
 
-                    colunas_originais = ["Arquivo ID", "Fabricante", "Matrícula", "FlashPoint", "Cliente", "Nome arquivo", "Dada"]
+                    # BLINDAGEM 2: Ampliando a rede para aceitar os nomes antigos e os nomes já corrigidos
+                    colunas_originais = ["Arquivo ID", "Fabricante", "Matrícula", "FlashPoint", "Cliente", "Nome arquivo", "Descrição", "Dada", "Data"]
                     colunas_existentes = [col for col in colunas_originais if col in df_filtrado.columns]
                     df_filtrado = df_filtrado[colunas_existentes].copy()
 
@@ -1228,10 +1229,8 @@ elif st.session_state.app_mode == "GESTAO_OS":
             df_base_os = st.session_state.df_filtrado
             bytes_modelo = modelo_word_carregado.read()
             
-            # BLINDAGEM 2: Verifica se a coluna sobreviveu ao processamento antes de tentar usá-la
             if "Flash Point" not in df_base_os.columns:
-                st.error("⚠️ Ops! A coluna 'Flash Point' desapareceu durante o processamento (provavelmente estava vazia ou com nome desconhecido).")
-                st.info("💡 Dica: Confira sua planilha no Excel e certifique-se de que a coluna de Flash Points existe e possui dados válidos.")
+                st.error("⚠️ Ops! A coluna 'Flash Point' desapareceu durante o processamento.")
             else:
                 lista_fp_unicos = sorted(list(set(str(val).strip() for val in df_base_os["Flash Point"].unique() if pd.notna(val))))
                 
@@ -1270,7 +1269,12 @@ elif st.session_state.app_mode == "GESTAO_OS":
                         
                     df_preview_os = pd.DataFrame(linhas_os_finais)
                     df_preview_os = df_preview_os[df_preview_os["Valor"].notna()].copy()
-                    df_preview_os["Descrição"] = df_preview_os["Descrição"].apply(limpar_descricao_os)
+                    
+                    # BLINDAGEM 3: Verifica se a coluna Descrição sobreviveu antes de formatá-la
+                    if "Descrição" in df_preview_os.columns:
+                        df_preview_os["Descrição"] = df_preview_os["Descrição"].apply(limpar_descricao_os)
+                    else:
+                        df_preview_os["Descrição"] = ""
                     
                     colunas_preview_os = ["Nº Mapa", "Data", "Veículo", "Placa", "Descrição", "Valor"]
                     colunas_preview_existentes = [c for c in colunas_preview_os if c in df_preview_os.columns]
