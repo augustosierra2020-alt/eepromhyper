@@ -1089,12 +1089,17 @@ elif st.session_state.app_mode == "GESTAO_OS":
                     st.error("Erro: Não foi possível processar a estrutura de dados deste arquivo.")
                 else:
                     df.columns = df.columns.str.strip()
+                    
+                    # BLINDAGEM 1: Corrige variações de nome da coluna do Flash Point vindos da planilha
+                    for col in df.columns:
+                        if str(col).upper().replace(" ", "") == "FLASHPOINT":
+                            df.rename(columns={col: "FlashPoint"}, inplace=True)
 
                     if "T" in df.columns:
                         df["T"] = df["T"].astype(str).str.strip()
                         df_filtrado = df[df["T"] == "MOD"].copy()
                     else:
-                        st.warning("Aviso: A coluna 'T' não foi encontrada.")
+                        st.warning("Aviso: A coluna 'T' não foi encontrada. Prosseguindo sem filtrar.")
                         df_filtrado = df.copy()
 
                     colunas_originais = ["Arquivo ID", "Fabricante", "Matrícula", "FlashPoint", "Cliente", "Nome arquivo", "Dada"]
@@ -1201,6 +1206,8 @@ elif st.session_state.app_mode == "GESTAO_OS":
                             file_name="FPF_Relatorio_Final.xlsx",
                             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                         )
+                    else:
+                        st.warning("⚠️ Planilha lida, mas a coluna de 'Flash Point' não foi detectada com dados válidos para fatiamento.")
             except Exception as e:
                 st.error(f"Erro crítico no processamento: {e}")
 
@@ -1221,80 +1228,85 @@ elif st.session_state.app_mode == "GESTAO_OS":
             df_base_os = st.session_state.df_filtrado
             bytes_modelo = modelo_word_carregado.read()
             
-            lista_fp_unicos = sorted(list(set(str(val).strip() for val in df_base_os["Flash Point"].unique() if pd.notna(val))))
-            
-            fp_selecionado = st.selectbox("Selecione o Flash Point para gerar a OS correspondente:", lista_fp_unicos)
-            
-            dados_bloco = df_base_os[df_base_os["Flash Point"] == fp_selecionado]
-            cliente_sugerido = str(dados_bloco.iloc[0].get("Cliente", "Cliente Não Identificado"))
-            
-            col1, col2 = st.columns(2)
-            with col1:
-                nome_cliente_input = st.text_input("Cliente (Preenchido Automaticamente):", value=cliente_sugerido)
-                cidade_input = st.text_input("Cidade (Adicionar a critério do usuário):", placeholder="Ex: Cascavel - PR")
-            with col2:
-                flash_point_confirmacao = st.text_input("Flash Point Relacionado:", value=fp_selecionado, disabled=True)
-                contato_input = st.text_input("Contato (Adicionar a critério do usuário):", placeholder="Ex: (45) 99999-9999")
+            # BLINDAGEM 2: Verifica se a coluna sobreviveu ao processamento antes de tentar usá-la
+            if "Flash Point" not in df_base_os.columns:
+                st.error("⚠️ Ops! A coluna 'Flash Point' desapareceu durante o processamento (provavelmente estava vazia ou com nome desconhecido).")
+                st.info("💡 Dica: Confira sua planilha no Excel e certifique-se de que a coluna de Flash Points existe e possui dados válidos.")
+            else:
+                lista_fp_unicos = sorted(list(set(str(val).strip() for val in df_base_os["Flash Point"].unique() if pd.notna(val))))
                 
-            st.write("✏️ **Edite a tabela abaixo antes de gerar o Word:** (Você pode alterar textos, adicionar `+` ou remover linhas diretamente na tela)")
-            
-            linhas_os_finais = []
-            placas_vistas_os = set()
-            
-            for idx, row in dados_bloco.iterrows():
-                row_dict = row.to_dict()
-                placa = str(row_dict.get("Placa", "")).strip()
-                
-                if placa in placas_vistas_os and placa != "":
-                    row_dict["Valor"] = None
+                if not lista_fp_unicos:
+                    st.warning("Nenhum Flash Point válido encontrado nos dados filtrados.")
                 else:
-                    if placa != "":
-                        placas_vistas_os.add(placa)
-                
-                linhas_os_finais.append(row_dict)
-                
-            df_preview_os = pd.DataFrame(linhas_os_finais)
-            df_preview_os = df_preview_os[df_preview_os["Valor"].notna()].copy()
-            df_preview_os["Descrição"] = df_preview_os["Descrição"].apply(limpar_descricao_os)
-            
-            colunas_preview_os = ["Nº Mapa", "Data", "Veículo", "Placa", "Descrição", "Valor"]
-            colunas_preview_existentes = [c for c in colunas_preview_os if c in df_preview_os.columns]
-            
-            # Editor de Dados Interativo (Data Editor)
-            df_editado = st.data_editor(
-                df_preview_os[colunas_preview_existentes],
-                num_rows="dynamic",
-                use_container_width=True,
-                key=f"editor_os_{fp_selecionado}"
-            )
-            
-            # Recalcula a soma TOTAL baseada na tabela limpando possíveis textos ou formatos de moeda!
-            soma_total_os = df_editado["Valor"].apply(higienizar_valor_monetario_para_calculo).sum()
-            
-            st.metric(label="Valor Total Consolidado da OS (Baseado na tabela acima)", value=f"R$ {soma_total_os:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
-            
-            if st.button("🚀 Preencher e Gerar Ordem de Serviço"):
-                # Transforma o DataFrame editado de volta num formato que o gerador do Word entenda
-                linhas_tabela_editadas = df_editado.to_dict(orient="records")
-                
-                arquivo_word_final = modificar_modelo_docx(
-                    modelo_bytes=bytes_modelo,
-                    flash_point=fp_selecionado,
-                    cliente_nome=nome_cliente_input,
-                    cidade=cidade_input,
-                    contato=contato_input,
-                    linhas_tabela=linhas_tabela_editadas,
-                    total_valor=soma_total_os
-                )
-                
-                st.success(f"Ordem de Serviço para o Flash Point {fp_selecionado} gerada com sucesso!")
-                
-                st.download_button(
-                    label="📥 Baixar Ordem de Serviço Pronta (.docx)",
-                    data=arquivo_word_final.getvalue(),
-                    file_name=f"OS_Hyper_Tork_{fp_selecionado}.docx",
-                    mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                )
+                    fp_selecionado = st.selectbox("Selecione o Flash Point para gerar a OS correspondente:", lista_fp_unicos)
+                    
+                    dados_bloco = df_base_os[df_base_os["Flash Point"] == fp_selecionado]
+                    cliente_sugerido = str(dados_bloco.iloc[0].get("Cliente", "Cliente Não Identificado"))
+                    
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        nome_cliente_input = st.text_input("Cliente (Preenchido Automaticamente):", value=cliente_sugerido)
+                        cidade_input = st.text_input("Cidade (Adicionar a critério do usuário):", placeholder="Ex: Cascavel - PR")
+                    with col2:
+                        flash_point_confirmacao = st.text_input("Flash Point Relacionado:", value=fp_selecionado, disabled=True)
+                        contato_input = st.text_input("Contato (Adicionar a critério do usuário):", placeholder="Ex: (45) 99999-9999")
+                        
+                    st.write("✏️ **Edite a tabela abaixo antes de gerar o Word:** (Você pode alterar textos, adicionar `+` ou remover linhas diretamente na tela)")
+                    
+                    linhas_os_finais = []
+                    placas_vistas_os = set()
+                    
+                    for idx, row in dados_bloco.iterrows():
+                        row_dict = row.to_dict()
+                        placa = str(row_dict.get("Placa", "")).strip()
+                        
+                        if placa in placas_vistas_os and placa != "":
+                            row_dict["Valor"] = None
+                        else:
+                            if placa != "":
+                                placas_vistas_os.add(placa)
+                        
+                        linhas_os_finais.append(row_dict)
+                        
+                    df_preview_os = pd.DataFrame(linhas_os_finais)
+                    df_preview_os = df_preview_os[df_preview_os["Valor"].notna()].copy()
+                    df_preview_os["Descrição"] = df_preview_os["Descrição"].apply(limpar_descricao_os)
+                    
+                    colunas_preview_os = ["Nº Mapa", "Data", "Veículo", "Placa", "Descrição", "Valor"]
+                    colunas_preview_existentes = [c for c in colunas_preview_os if c in df_preview_os.columns]
+                    
+                    df_editado = st.data_editor(
+                        df_preview_os[colunas_preview_existentes],
+                        num_rows="dynamic",
+                        use_container_width=True,
+                        key=f"editor_os_{fp_selecionado}"
+                    )
+                    
+                    soma_total_os = df_editado["Valor"].apply(higienizar_valor_monetario_para_calculo).sum()
+                    
+                    st.metric(label="Valor Total Consolidado da OS (Baseado na tabela acima)", value=f"R$ {soma_total_os:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
+                    
+                    if st.button("🚀 Preencher e Gerar Ordem de Serviço"):
+                        linhas_tabela_editadas = df_editado.to_dict(orient="records")
+                        
+                        arquivo_word_final = modificar_modelo_docx(
+                            modelo_bytes=bytes_modelo,
+                            flash_point=fp_selecionado,
+                            cliente_nome=nome_cliente_input,
+                            cidade=cidade_input,
+                            contato=contato_input,
+                            linhas_tabela=linhas_tabela_editadas,
+                            total_valor=soma_total_os
+                        )
+                        
+                        st.success(f"Ordem de Serviço para o Flash Point {fp_selecionado} gerada com sucesso!")
+                        
+                        st.download_button(
+                            label="📥 Baixar Ordem de Serviço Pronta (.docx)",
+                            data=arquivo_word_final.getvalue(),
+                            file_name=f"OS_Hyper_Tork_{fp_selecionado}.docx",
+                            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                        )
 
 # ==========================================
 # 11. CHIP POP-UP FLUTUANTE (BOTÃO LARANJA)
