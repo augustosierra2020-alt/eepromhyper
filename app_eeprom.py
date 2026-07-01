@@ -428,7 +428,6 @@ def calcular_valor_inicial(linha):
     eh_especial = any(fab in veiculo for fab in fabricantes_especiais)
     if "VOLVO TRUCK" in veiculo: eh_especial = False
 
-    # NOVA REGRA: P420 custa 200
     if "P420" in descricao: return 200
 
     if any(termo in descricao for termo in termos_stg2): return 1400 if eh_especial else 650
@@ -442,6 +441,20 @@ def limpar_descricao_os(desc_original):
     elif "MOD" in desc_upper: return "MOD"
     elif "OFF" in desc_upper: return "OFF"
     return desc_original
+
+def higienizar_valor_monetario_para_calculo(val):
+    if pd.isna(val) or val is None or str(val).strip() == "": return 0.0
+    val_str = str(val).upper().replace("R$", "").strip()
+    # Se o usuário digitou no padrão brasileiro com ponto de milhar e vírgula decimal (ex: 1.200,50)
+    if "." in val_str and "," in val_str:
+        val_str = val_str.replace(".", "").replace(",", ".")
+    # Se digitou apenas com vírgula decimal (ex: 350,50)
+    elif "," in val_str:
+        val_str = val_str.replace(",", ".")
+    try:
+        return float(val_str)
+    except ValueError:
+        return 0.0
 
 def modificar_modelo_docx(modelo_bytes, flash_point, cliente_nome, cidade, contato, linhas_tabela, total_valor):
     doc = Document(io.BytesIO(modelo_bytes))
@@ -462,7 +475,13 @@ def modificar_modelo_docx(modelo_bytes, flash_point, cliente_nome, cidade, conta
                     for p in row.cells[1].paragraphs:
                         for run in p.runs: run.font.name = 'Arial'; run.font.size = Pt(11)
 
-    linhas_validas = [l for l in linhas_tabela if l.get("Valor") is not None and str(l.get("Valor")).strip() != "" and str(l.get("Valor")).lower() != "nan"]
+    # Filtrar linhas válidas ignorando células em branco ou não numéricas
+    linhas_validas = []
+    for l in linhas_tabela:
+        val_cru = l.get("Valor")
+        if pd.notna(val_cru) and str(val_cru).strip() != "" and str(val_cru).lower() != "nan":
+            linhas_validas.append(l)
+
     tabela_servicos = None
     for t in doc.tables:
         if len(t.rows) > 0 and "Nº MAPA" in t.rows[0].cells[0].text.upper():
@@ -474,8 +493,12 @@ def modificar_modelo_docx(modelo_bytes, flash_point, cliente_nome, cidade, conta
             idx_linha_destino = i + 1  
             if idx_linha_destino >= len(tabela_servicos.rows): row_cells = tabela_servicos.add_row().cells
             else: row_cells = tabela_servicos.rows[idx_linha_destino].cells
-                
-            dados_linha = [str(linha.get("Nº Mapa", "")), str(linha.get("Data", "")), str(linha.get("Veículo", "")), str(linha.get("Placa", "")), limpar_descricao_os(linha.get("Descrição", "")), f"R$ {linha.get('Valor', '')}"]
+            
+            # Limpa o valor puramente visual para exibir bonito na OS gerada (ex: se digitou "200.5", sai formatado correto)
+            valor_num = higienizar_valor_monetario_para_calculo(linha.get("Valor", 0))
+            valor_formatado_linha = f"R$ {valor_num:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+            
+            dados_linha = [str(linha.get("Nº Mapa", "")), str(linha.get("Data", "")), str(linha.get("Veículo", "")), str(linha.get("Placa", "")), limpar_descricao_os(linha.get("Descrição", "")), valor_formatado_linha]
             
             for idx_col, valor_celula in enumerate(dados_linha):
                 if idx_col < len(row_cells):
@@ -1223,8 +1246,8 @@ elif st.session_state.app_mode == "GESTAO_OS":
                 key=f"editor_os_{fp_selecionado}"
             )
             
-            # Recalcula a soma TOTAL baseada na tabela que o usuário acabou de editar!
-            soma_total_os = pd.to_numeric(df_editado["Valor"], errors='coerce').sum()
+            # Recalcula a soma TOTAL baseada na tabela limpando possíveis textos ou formatos de moeda!
+            soma_total_os = df_editado["Valor"].apply(higienizar_valor_monetario_para_calculo).sum()
             
             st.metric(label="Valor Total Consolidado da OS (Baseado na tabela acima)", value=f"R$ {soma_total_os:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
             
