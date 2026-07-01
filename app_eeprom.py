@@ -416,7 +416,6 @@ def abrir_modal_zoom(foto_bytes, legenda_titulo):
 # 7. FUNÇÕES ESPECÍFICAS DA ABA DE GESTÃO DE OS
 # ==========================================
 def calcular_valor_inicial(linha):
-    # Procura pelas colunas "Nome arquivo" OU "Descrição", prevenindo planilhas diferentes
     descricao_crua = linha.get("Nome arquivo", linha.get("Descrição", ""))
     descricao = str(descricao_crua).upper().strip()
     
@@ -429,18 +428,18 @@ def calcular_valor_inicial(linha):
     eh_especial = any(fab in veiculo for fab in fabricantes_especiais)
     if "VOLVO TRUCK" in veiculo: eh_especial = False
 
-    has_p420 = bool(re.search(r'P\s*420', descricao))
+    # Regex Blindado P420 e P0420: Busca P420, P0420, P 420, P 0420, etc.
+    has_p420 = bool(re.search(r'P\s*0?\s*420', descricao))
     has_mod = "MOD" in descricao
 
-    # REGRA HIERÁRQUICA 1: Se tiver MOD e P420 juntos, considera Stage 2 (ignora regra dos 200)
+    # REGRA HIERÁRQUICA 1: Se tiver MOD e P420/P0420 juntos, considera Stage 2
     if has_mod and has_p420:
         return 1400 if eh_especial else 650
 
-    # REGRA HIERÁRQUICA 2: Se tem APENAS P420 (sem o MOD), cobra 200
+    # REGRA HIERÁRQUICA 2: Se tem APENAS P420/P0420 (sem o MOD), cobra 200
     if has_p420:
         return 200
 
-    # Demais regras (STG2 escrito errado, etc)
     if re.search(r'S+T+A*G+E*\s*2', descricao): 
         return 1400 if eh_especial else 650
         
@@ -452,14 +451,15 @@ def calcular_valor_inicial(linha):
 def limpar_descricao_os(desc_original):
     desc_upper = str(desc_original).upper().strip()
     
-    # Se achou o P420 no meio do texto original (Ex: MOD OFF p420), preserva ele limpo
-    if re.search(r'P\s*420', desc_upper):
-        if "MOD" in desc_upper and "OFF" in desc_upper: return "MOD OFF P420"
-        if "MOD" in desc_upper: return "MOD P420"
-        if "OFF" in desc_upper: return "OFF P420"
-        return "P420"
+    # Se achou o P420/P0420 no texto, formata corretamente na OS
+    match_p420 = re.search(r'P\s*0?\s*420', desc_upper)
+    if match_p420:
+        codigo_limpo = match_p420.group(0).replace(" ", "") # Remove os espaços, deixando P420 ou P0420
+        if "MOD" in desc_upper and "OFF" in desc_upper: return f"MOD OFF {codigo_limpo}"
+        if "MOD" in desc_upper: return f"MOD {codigo_limpo}"
+        if "OFF" in desc_upper: return f"OFF {codigo_limpo}"
+        return codigo_limpo
 
-    # Padroniza visualmente a nomenclatura se encontrar gagueira na digitação do Stage 2
     if re.search(r'S+T+A*G+E*\s*2', desc_upper): 
         return "STAG 2"
         
