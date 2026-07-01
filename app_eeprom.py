@@ -421,23 +421,32 @@ def calcular_valor_inicial(linha):
     descricao = re.sub(r"\s+", " ", descricao)
     veiculo = re.sub(r"\s+", " ", veiculo)
 
-    termos_stg2 = ["STG2", "STG 2", "STAG2", "STAG 2"]
     termos_mod_off = ["MOD", "OFF"]
     fabricantes_especiais = ["NEW HOLLAND", "VALTRA", "CASE IH", "CASE", "MASSEY FERGUSSON", "MASSEY", "CLAAS", "JHON DEERE", "JOHN DEERE", "DEERE", "FENDT", "JACTO", "DOPPSTADT", "JAN", "VOLVO CONSTRUCTION EQUIPMENT", "VOLVO CONSTRUCTION", "VOLVO CE"]
 
     eh_especial = any(fab in veiculo for fab in fabricantes_especiais)
     if "VOLVO TRUCK" in veiculo: eh_especial = False
 
+    # Regra do P420 (como o texto já sofreu .upper(), ele pega p420, P420, etc.)
     if "P420" in descricao: return 200
 
-    if any(termo in descricao for termo in termos_stg2): return 1400 if eh_especial else 650
-    elif any(termo in descricao for termo in termos_mod_off): return 700 if eh_especial else 350
+    # Lógica Inteligente para Erros de Digitação do Stage 2 (Ex: STG2, STAG 2, STAAG 2, STAGE 2...)
+    # Regex: S+ (um ou mais S), T+ (um ou mais T), A* (zero ou mais A), G+ (um ou mais G), E* (zero ou mais E), seguido opcionalmente de espaço e 2.
+    if re.search(r'S+T+A*G+E*\s*2', descricao): 
+        return 1400 if eh_especial else 650
+        
+    elif any(termo in descricao for termo in termos_mod_off): 
+        return 700 if eh_especial else 350
+        
     return None
 
 def limpar_descricao_os(desc_original):
     desc_upper = str(desc_original).upper().strip()
-    if "STAG 2" in desc_upper or "STAG2" in desc_upper: return "STAG 2"
-    elif "STG 2" in desc_upper or "STG2" in desc_upper: return "STG 2"
+    
+    # Padroniza visualmente a nomenclatura se encontrar gagueira na digitação do Stage 2
+    if re.search(r'S+T+A*G+E*\s*2', desc_upper): 
+        return "STAG 2"
+        
     elif "MOD" in desc_upper: return "MOD"
     elif "OFF" in desc_upper: return "OFF"
     return desc_original
@@ -445,10 +454,8 @@ def limpar_descricao_os(desc_original):
 def higienizar_valor_monetario_para_calculo(val):
     if pd.isna(val) or val is None or str(val).strip() == "": return 0.0
     val_str = str(val).upper().replace("R$", "").strip()
-    # Se o usuário digitou no padrão brasileiro com ponto de milhar e vírgula decimal (ex: 1.200,50)
     if "." in val_str and "," in val_str:
         val_str = val_str.replace(".", "").replace(",", ".")
-    # Se digitou apenas com vírgula decimal (ex: 350,50)
     elif "," in val_str:
         val_str = val_str.replace(",", ".")
     try:
@@ -475,7 +482,6 @@ def modificar_modelo_docx(modelo_bytes, flash_point, cliente_nome, cidade, conta
                     for p in row.cells[1].paragraphs:
                         for run in p.runs: run.font.name = 'Arial'; run.font.size = Pt(11)
 
-    # Filtrar linhas válidas ignorando células em branco ou não numéricas
     linhas_validas = []
     for l in linhas_tabela:
         val_cru = l.get("Valor")
@@ -494,7 +500,6 @@ def modificar_modelo_docx(modelo_bytes, flash_point, cliente_nome, cidade, conta
             if idx_linha_destino >= len(tabela_servicos.rows): row_cells = tabela_servicos.add_row().cells
             else: row_cells = tabela_servicos.rows[idx_linha_destino].cells
             
-            # Limpa o valor puramente visual para exibir bonito na OS gerada (ex: se digitou "200.5", sai formatado correto)
             valor_num = higienizar_valor_monetario_para_calculo(linha.get("Valor", 0))
             valor_formatado_linha = f"R$ {valor_num:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
             
