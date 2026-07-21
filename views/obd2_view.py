@@ -26,6 +26,9 @@ def diagnostico_avancado_obd2(codigo, segmento="", montadora="", modelo="", ano=
     except Exception as e: 
         search_results = f"(Busca web temporariamente indisponível. Detalhe: {e})"
         
+    if not HF_TOKEN:
+        return f"⚠️ **IA Offline:** A variável `HF_TOKEN` não foi configurada nos Secrets do Hugging Face Spaces. Configure-a para ativar os laudos automáticos do Chip.\n\n**Dados brutos da internet:**\n{search_results}"
+
     system_prompt = "Você é 'Chip', um Mecânico Chefe Especialista em Diagnóstico Avançado. Retorne APENAS o laudo técnico estruturado OBRIGATORIAMENTE em: Significado, Descrição, Sintomas, Causas e Solução."
     user_prompt = f"Falha: {codigo}. Contexto: {segmento}|{montadora}|{modelo}|{ano}. Dados cruzados web:\n{search_results}"
     
@@ -35,9 +38,10 @@ def diagnostico_avancado_obd2(codigo, segmento="", montadora="", modelo="", ano=
             mensagens = [{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}]
             completude = client.chat_completion(model="Qwen/Qwen2.5-7B-Instruct", messages=mensagens, max_tokens=850, temperature=0.2)
             return completude.choices[0].message.content.strip()
-        except: pass
+        except Exception as e:
+            return f"⚠️ **IA Offline (Erro na API):** Falha ao conectar ao modelo Qwen. Detalhe: {e}\n\n**Dados brutos da internet:**\n{search_results}"
     
-    return f"⚠️ IA Offline. Exibindo dados crus da internet:\n\n{search_results}"
+    return f"⚠️ **IA Offline:** Cliente de inferência indisponível.\n\n**Dados brutos da internet:**\n{search_results}"
 
 def salvar_pesquisa_obd2(codigo, segmento, montadora, modelo, ano, descricao):
     try:
