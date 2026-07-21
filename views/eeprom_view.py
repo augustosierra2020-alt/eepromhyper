@@ -13,7 +13,8 @@ import io
 from core.db import get_db_connection
 from services.hf_sync import backup_local_para_nuvem_async
 
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# Força o BASE_DIR a ser a raiz real do projeto, não a pasta views
+BASE_DIR = os.path.abspath(os.path.dirname(os.path.dirname(__file__)))
 LOGOS_DIR = os.path.join(BASE_DIR, "Logos")
 
 def limpar_para_comparacao(texto):
