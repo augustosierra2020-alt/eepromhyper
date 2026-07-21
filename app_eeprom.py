@@ -2,6 +2,7 @@ import streamlit as st
 import json
 import re
 import time
+import urllib.parse
 from core.db import init_db
 
 # Importação dos Módulos/Telas (Views)
@@ -35,45 +36,76 @@ st.markdown("""
     .big-hub-btn .emoji-icon { font-size: 3.5rem !important; line-height: 1 !important; margin-bottom: 12px !important; filter: drop-shadow(0px 4px 4px rgba(0,0,0,0.3)); }
     .big-hub-btn h2 { color: #FFFFFF !important; margin: 0 !important; font-weight: 700 !important; font-size: 1.25rem !important; letter-spacing: 0.5px !important; text-transform: uppercase; text-shadow: 0px 2px 4px rgba(0,0,0,0.5); }
     
-    /* Configuração e Posicionamento do Chip Pop-up */
+    /* === LOGO VISUAL === */
+    .locked-main-logo { 
+        max-height: 280px !important; 
+        width: auto !important; 
+        object-fit: contain !important; 
+        pointer-events: none !important; 
+        user-select: none !important; 
+        -webkit-user-drag: none !important;
+        filter: drop-shadow(0px 12px 24px rgba(0,0,0,0.25)) !important; 
+        transition: transform 0.3s ease !important;
+    }
+    .locked-main-logo:hover {
+        transform: scale(1.03) !important;
+    }
+    
+    /* === SLIDER ROXO E INPUTS === */
+    .stSlider > div[data-baseweb="slider"] [data-testid="stTickBar"] + div,
+    .stSlider > div[data-baseweb="slider"] [role="slider"] { background-color: #9C27B0 !important; border-color: #9C27B0 !important; }
+    div.stSlider > div[data-baseweb="slider"] > div > div > div { background-color: #9C27B0 !important; }
+    div.stSlider > div[data-baseweb="slider"] div { background-color: #9C27B0 !important; }
+    
+    div[data-baseweb="select"] { border-radius: 8px !important; border: 1px solid rgba(255,255,255,0.1) !important; transition: all 0.2s ease-in-out !important; }
+    div[data-baseweb="select"]:focus-within, div[data-baseweb="select"]:hover { border-color: #1E88E5 !important; box-shadow: 0 0 0 2px rgba(30, 136, 229, 0.2) !important; }
+    .stNumberInput input, .stTextInput input { border-radius: 8px !important; background-color: #1A1A1A !important; border: 1px solid rgba(255,255,255,0.1) !important; color: #FFFFFF !important; transition: all 0.2s ease-in-out !important; }
+    .stNumberInput input:focus, .stTextInput input:focus { border-color: #9C27B0 !important; box-shadow: 0 0 0 2px rgba(156, 39, 176, 0.2) !important; }
+    div[data-testid="stTabBar"] button { font-weight: 600 !important; letter-spacing: 0.5px !important; text-transform: uppercase !important; font-size: 0.85rem !important; padding: 10px 20px !important; transition: all 0.2s ease !important; }
+    div[data-testid="stTabBar"] button[aria-selected="true"] { color: #1E88E5 !important; border-bottom-color: #1E88E5 !important; }
+    
+    /* === DESIGN DO CHIP POP-UP EM LARANJA GRADIENTE PREMIUM === */
     div[data-testid="stPopover"] { 
         position: fixed !important; 
         bottom: 30px !important; 
         right: 30px !important; 
         z-index: 999999 !important; 
-        max-width: 70px !important;
-        width: 70px !important;
-        height: 70px !important;
+        max-width: 75px !important;
+        width: 75px !important;
+        height: 75px !important;
     }
     
-    /* Botão Laranja Embelezado */
-    div[data-testid="stPopover"] > button {
-        background: linear-gradient(135deg, #ff8c00 0%, #ff4500 100%) !important;
-        color: white !important;
-        border-radius: 50% !important;
-        width: 70px !important; height: 70px !important;
-        border: 2px solid white !important;
-        box-shadow: 0 10px 20px rgba(255, 69, 0, 0.4) !important;
-        font-size: 30px !important;
-        transition: all 0.3s ease !important;
+    div[data-testid="stPopover"] > button { 
+        background: linear-gradient(135deg, #FF8C00 0%, #FF4500 100%) !important; 
+        color: white !important; 
+        border: 3px solid rgba(255, 255, 255, 0.8) !important; 
+        border-radius: 50% !important; 
+        width: 75px !important; 
+        height: 75px !important; 
+        min-width: 75px !important; 
+        max-width: 75px !important;
+        box-shadow: 0 10px 25px rgba(255, 69, 0, 0.6), inset 0 -4px 10px rgba(0,0,0,0.15) !important; 
+        padding: 0 !important;
         display: flex !important;
         align-items: center !important;
         justify-content: center !important;
-        padding: 0 !important;
+        transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1) !important;
     }
     
     div[data-testid="stPopover"] > button:hover {
-        transform: scale(1.1) rotate(10deg) !important;
-        box-shadow: 0 15px 30px rgba(255, 69, 0, 0.6) !important;
+        transform: translateY(-5px) scale(1.1) !important;
+        box-shadow: 0 15px 35px rgba(255, 69, 0, 0.8), inset 0 -4px 10px rgba(0,0,0,0.2) !important;
+        border-color: #FFFFFF !important;
     }
     
     div[data-testid="stPopover"] > button p { 
-        font-size: 30px !important; 
+        font-size: 34px !important; 
         margin: 0 !important; 
         line-height: 1 !important;
         display: flex !important;
         align-items: center !important;
         justify-content: center !important;
+        filter: drop-shadow(0px 2px 2px rgba(0,0,0,0.3));
     }
     </style>
 """, unsafe_allow_html=True)
@@ -82,20 +114,30 @@ st.markdown("""
 # 2. INICIALIZAÇÃO DE ESTADOS E PROTEÇÕES
 # ==========================================
 if "startup_ok" not in st.session_state:
-    # Baixa o banco da nuvem para garantir que as tabelas locais estejam atualizadas
+    # 1º Baixa o banco da nuvem para garantir que as tabelas locais estejam atualizadas
     sincronizar_nuvem_para_local()  
-    # Inicializa o pool de conexões com segurança
+    # 2º Inicializa o pool de conexões com segurança
     init_db()                       
     st.session_state.startup_ok = True
     st.session_state.app_mode = "HOME"
     st.session_state.adm_logged_in = False
     st.session_state.chat_historico = [{"role": "assistant", "content": "Olá chefe! Sou o Chip. Como posso ajudar na oficina hoje?"}]
 
+# Inicialização de variáveis de controle para as views
+if 'montadora_selecionada' not in st.session_state: st.session_state.montadora_selecionada = ""
+if 'escolha_modelo' not in st.session_state: st.session_state.escolha_modelo = ""
+if 'hex_atual' not in st.session_state: st.session_state.hex_atual = None
+if 'view_addr_atual' not in st.session_state: st.session_state.view_addr_atual = 0
+if 'focus_mode' not in st.session_state: st.session_state.focus_mode = None
+if 'zoom_janela' not in st.session_state: st.session_state.zoom_janela = 256
+
 # Captura redirecionamentos via query params (Cliques rápidos)
 params = st.query_params
 if "page" in params:
     st.session_state.app_mode = params["page"]
     st.query_params.clear()
+if "mont" in params: st.session_state.montadora_selecionada = urllib.parse.unquote(params["mont"])
+if "mod" in params: st.session_state.escolha_modelo = urllib.parse.unquote(params["mod"])
 
 # ==========================================
 # 3. MODAL DE SEGURANÇA ADM ROOM
@@ -105,7 +147,7 @@ def modal_login_adm():
     st.write("Forneça as credenciais administrativas do HyperTork System:")
     user_input = st.text_input("Usuário", placeholder="adm01")
     pass_input = st.text_input("Senha", type="password", placeholder="•••••")
-    if st.button("Autenticar Panel", type="primary", use_container_width=True):
+    if st.button("Autenticar Painel", type="primary", use_container_width=True):
         if user_input == "adm01" and pass_input == "12345":
             st.session_state.adm_logged_in = True
             st.session_state.app_mode = "ADM_ROOM"
@@ -121,7 +163,11 @@ st.sidebar.title("🛡️ HyperTork Hub")
 
 if st.session_state.app_mode != "HOME":
     if st.sidebar.button("🎮 Voltar ao Menu Principal", use_container_width=True, type="primary"):
+        st.query_params.clear()
         st.session_state.app_mode = "HOME"
+        st.session_state.montadora_selecionada = ""
+        st.session_state.escolha_modelo = ""
+        st.session_state.focus_mode = None
         st.rerun()
     st.sidebar.markdown("---")
 else:
@@ -180,16 +226,16 @@ with st.popover("🤖"):
             with st.chat_message(msg["role"]): 
                 st.markdown(msg["content"])
                 
-    # Interface de entrada otimizada
+    # Interface de entrada nativa do chat
     prompt = st.chat_input("Diga um código DTC ou pergunte algo...")
     if prompt:
         st.session_state.chat_historico.append({"role": "user", "content": prompt})
         
-        # Inteligência de Resposta Direta
+        # Inteligência Rápida de Resposta
         if any(c.isdigit() for c in prompt) and "P" in prompt.upper():
-            resp = f"🔧 **Análise de Diagnóstico ({prompt.upper()}):** Detectei que este código refere-se a uma anomalia no sistema. Recomendo verificar os sensores de oxigênio e a estanqueidade do escape."
+            resp = f"🔧 **Análise de Diagnóstico ({prompt.upper()}):** Detectei que este código refere-se a uma anomalia de injeção ou falha em sensor. Recomendo cruzar os dados na aba OBD2 para uma pesquisa aprofundada na web."
         else:
-            resp = "Chefe, recebi sua mensagem. Estou monitorando os sistemas da HyperTork e pronto para processar seus arquivos HEX."
+            resp = "Chefe, recebi sua mensagem. Os sistemas do HyperTork Hub estão 100% operacionais e protegidos. Posso processar as matrizes HEX ou buscar as pinagens EEPROM que você precisar."
         
         st.session_state.chat_historico.append({"role": "assistant", "content": resp})
         st.rerun()

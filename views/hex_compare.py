@@ -3,14 +3,13 @@ import numpy as np
 import plotly.graph_objects as go
 import zlib
 import pandas as pd
+import re
 from typing import Tuple, List, Dict, Any
 from datetime import datetime
 
-# Importações da infraestrutura modular estável
 from core.db import get_db_connection
 from services.hf_sync import backup_local_para_nuvem_async
 
-# Suporte ao motor C++ nativo
 try:
     import hypertork_cpp
     HAS_CPP = True
@@ -21,7 +20,7 @@ MAX_DIFFS = 3000
 GAP_THRESHOLD = 48
 
 # ==========================================
-# FUNÇÕES CORE: ENGENHARIA REVERSA E PROCESSAMENTO
+# FUNÇÕES CORE: ENGENHARIA REVERSA 
 # ==========================================
 def processar_bytes_para_valores(bytes_crus, bits=16, signed=False, endian='big'):
     if not bytes_crus: return np.array([])
@@ -105,28 +104,23 @@ def obter_checksum_arquivo(dados_bytes):
     if not dados_bytes: return 0
     return sum(np.frombuffer(dados_bytes, dtype=np.uint8)) & 0xFF
 
-# --- BANCO DE DADOS HEX MODULARIZADO ---
-def salvar_comparacao_hex_nuvem(veiculo, file_ori, file_mod, laudo, cv):
+def salvar_comparacao_hex_nuvem(veiculo, file_ori, file_mod, laudo):
     conn = get_db_connection()
     try:
         cursor = conn.cursor()
         ori_comp = zlib.compress(file_ori); mod_comp = zlib.compress(file_mod)
         data_formatada = datetime.now().strftime("%d/%m/%Y %H:%M")
-        try: cursor.execute("ALTER TABLE hex_history ADD COLUMN cv_estimado INTEGER DEFAULT 0")
-        except: pass
-        cursor.execute("INSERT INTO hex_history (veiculo, data, file_ori, file_mod, laudo, cv_estimado) VALUES (?, ?, ?, ?, ?, ?)", (veiculo, data_formatada, ori_comp, mod_comp, laudo, int(cv)))
+        cursor.execute("INSERT INTO hex_history (veiculo, data, file_ori, file_mod, laudo) VALUES (?, ?, ?, ?, ?)", (veiculo, data_formatada, ori_comp, mod_comp, laudo))
         conn.commit()
         backup_local_para_nuvem_async()
     except Exception as e:
-        st.error(f"Erro ao salvar histórico hex: {e}")
+        st.error(f"Erro ao salvar: {e}")
 
 def carregar_historico_hex_geral():
     conn = get_db_connection()
     try:
         cursor = conn.cursor()
-        try: cursor.execute("ALTER TABLE hex_history ADD COLUMN cv_estimado INTEGER DEFAULT 0")
-        except: pass
-        cursor.execute("SELECT id, veiculo, data, laudo, cv_estimado FROM hex_history ORDER BY id DESC LIMIT 50")
+        cursor.execute("SELECT id, veiculo, data, laudo FROM hex_history ORDER BY id DESC LIMIT 50")
         return cursor.fetchall()
     except Exception: return []
 
@@ -134,207 +128,301 @@ def carregar_arquivos_hex_por_id(hist_id: int):
     conn = get_db_connection()
     try:
         cursor = conn.cursor()
-        cursor.execute("SELECT file_ori, file_mod, veiculo, laudo, cv_estimado FROM hex_history WHERE id = ?", (hist_id,))
+        cursor.execute("SELECT file_ori, file_mod, veiculo, laudo FROM hex_history WHERE id = ?", (hist_id,))
         res = cursor.fetchone()
-        if res: return zlib.decompress(res[0]), zlib.decompress(res[1]), res[2], res[3], res[4]
+        if res: return zlib.decompress(res[0]), zlib.decompress(res[1]), res[2], res[3]
     except Exception: pass
-    return None, None, None, None, None
+    return None, None, None, None
 
 # ==========================================
-# INTERFACE DO COMPARADOR E RENDERIZAÇÃO
+# RENDERIZADOR DA VIEW
 # ==========================================
 def render_hex_compare():
-    hud_axis_style = dict(backgroundcolor="#121212", gridcolor="#333333", showbackground=True, zerolinecolor="#333333")
-    
-    # 🖥️ MODO FOCO 3D TELA CHEIA (RECURSO RESTAURADO)
+    if "zoom_janela" not in st.session_state: st.session_state.zoom_janela = 256
+    if "view_addr_atual" not in st.session_state: st.session_state.view_addr_atual = 0
+
     if st.session_state.get('focus_mode') == '3D' and st.session_state.get('hex_atual'):
         dados = st.session_state.hex_atual
-        st.subheader("🔍 Modo Expandido Total - Mapa 3D")
+        st.title("🔍 Modo Expandido Total - Mapa 3D")
         if st.button("❌ Sair do Modo Tela Cheia (Voltar ao Workspace)", type="primary", use_container_width=True):
             st.session_state.focus_mode = None
             st.rerun()
             
         bits_val = int(st.session_state.get('escala_op_saved', '16 bits').split()[0])
         b_step = bits_val // 8
-        addr = st.session_state.get('view_addr_atual', 0)
-        zoom = st.session_state.get('zoom_janela', 256)
+        byteorder_str = st.session_state.get('byteorder_saved', 'big')
+        is_signed = st.session_state.get('signed_saved', False)
         fator = st.session_state.get('fator_saved', 1.0)
         offset = st.session_state.get('offset_saved', 0.0)
-        signed_op = st.session_state.get('signed_saved', False)
-        endian_op = st.session_state.get('byteorder_saved', 'big')
+        modo_exibicao = st.session_state.get('modo_exibicao_saved', 'Valores Absolutos Convertidos')
+        inverter_val = st.session_state.get('inverter_saved', False)
         
-        janela_bytes_tamanho = zoom * b_step
-        addr_fim = min(len(dados['bytes_orig']), addr + janela_bytes_tamanho)
+        janela_bytes_tamanho = st.session_state.zoom_janela * b_step
+        addr_inicio = st.session_state.view_addr_atual
+        addr_fim = min(len(dados['bytes_orig']), addr_inicio + janela_bytes_tamanho)
 
-        valores_ori = (processar_bytes_para_valores(dados['bytes_orig'][addr:addr_fim], bits_val, signed_op, endian_op) * fator) + offset
-        valores_mod = (processar_bytes_para_valores(dados['bytes_mod'][addr:addr_fim], bits_val, signed_op, endian_op) * fator) + offset
+        bytes_janela_ori = dados['bytes_orig'][addr_inicio:addr_fim]
+        bytes_janela_mod = dados['bytes_mod'][addr_inicio:addr_fim]
+        valores_ori_brutos = processar_bytes_para_valores(bytes_janela_ori, bits_val, is_signed, byteorder_str)
+        valores_mod_brutos = processar_bytes_para_valores(bytes_janela_mod, bits_val, is_signed, byteorder_str)
+        linhas, colunas = detectar_dimensao_mapa(valores_ori_brutos, valores_mod_brutos)
+        total_elementos = linhas * colunas
+        valores_ori_eng = (valores_ori_brutos[:total_elementos] * fator) + offset
+        valores_mod_eng = (valores_mod_brutos[:total_elementos] * fator) + offset
         
-        linhas, colunas = detectar_dimensao_mapa(valores_ori, valores_mod)
-        elementos_validos = linhas * colunas
+        with np.errstate(divide='ignore', invalid='ignore'):
+            valores_delta_pct = np.where(valores_ori_eng != 0, ((valores_mod_eng - valores_ori_eng) / np.abs(valores_ori_eng)) * 100.0, 0.0)
+            valores_delta_pct = np.nan_to_num(valores_delta_pct)
+
+        matriz_ori_eng = valores_ori_eng.reshape((linhas, colunas))
+        matriz_mod_eng = valores_mod_eng.reshape((linhas, colunas))
+        matriz_delta_pct = valores_delta_pct.reshape((linhas, colunas))
         
         fig_3d = go.Figure()
-        fig_3d.add_trace(go.Surface(z=valores_ori[:elementos_validos].reshape((linhas, colunas)), name='ORI', colorscale='Blues', opacity=0.5))
-        fig_3d.add_trace(go.Surface(z=valores_mod[:elementos_validos].reshape((linhas, colunas)), name='MOD', colorscale='Reds', opacity=1.0))
-        fig_3d.update_layout(height=850, margin=dict(l=0, r=0, b=0, t=20), paper_bgcolor='#121212', scene=dict(xaxis=hud_axis_style, yaxis=hud_axis_style, zaxis=hud_axis_style))
-        st.plotly_chart(fig_3d, use_container_width=True)
+        z_dir = "reversed" if inverter_val else True
+        if "Percentual" in modo_exibicao:
+            fig_3d.add_trace(go.Surface(z=matriz_delta_pct, name='Delta %', colorscale='Viridis'))
+        else:
+            fig_3d.add_trace(go.Surface(z=matriz_ori_eng, name='ORI', colorscale='Blues', opacity=0.5, showscale=False))
+            fig_3d.add_trace(go.Surface(z=matriz_mod_eng, name='MOD', colorscale='Reds', opacity=1.0))
+        
+        fig_3d.update_layout(
+            height=850, margin=dict(l=0, r=0, b=0, t=20), paper_bgcolor='#121212', plot_bgcolor='#121212', font=dict(color='white'), 
+            scene=dict(zaxis=dict(autorange=z_dir), camera=dict(eye=dict(x=1.6, y=1.6, z=1.3)))
+        )
+        st.plotly_chart(fig_3d, use_container_width=True, config={'displayModeBar': True, 'scrollZoom': True, 'displaylogo': False})
         st.stop()
 
-    st.title("🛠️ Estúdio Avançado de Calibração HEX")
-    
-    aba_comp, aba_id = st.tabs(["⚖️ Comparação e Gráficos", "🔍 Identificador de Firmware (ECU ID)"])
-    
-    with aba_id:
-        st.subheader("Validador Inteligente de Arquivo Único")
-        fw_file = st.file_uploader("Suba o arquivo .bin ou .ori para leitura de Header:", key="fw_upload")
-        if fw_file:
-            try:
-                from services.ecu_parser import parse_ecu_firmware
-                info = parse_ecu_firmware(fw_file.read())
-                st.json(info)
-                st.success("Análise de metadados estruturais concluída.")
-            except Exception as e:
-                st.error(f"Erro no módulo parser de firmware: {e}")
-    
-    with aba_comp:
-        historico_global = carregar_historico_hex_geral()
-        if historico_global:
-            with st.expander("📚 Histórico Global de Consultas (Carregar Salvos na Nuvem)", expanded=not st.session_state.get('hex_atual')):
-                for hist in historico_global:
-                    h_id, h_veiculo, h_data, h_laudo, h_cv = hist
-                    col_ha, col_hb = st.columns([4, 1])
-                    col_ha.write(f"🕒 **{h_data}** | Veículo/ECU: {h_veiculo or 'N/A'}")
-                    if col_hb.button("📂 Abrir Comparação", key=f"btn_load_{h_id}"):
-                        with st.spinner("Descarregando da nuvem..."):
-                            ori_b, mod_b, veic_b, laudo_b, cv_b = carregar_arquivos_hex_por_id(h_id)
-                            if ori_b and mod_b:
-                                diffs, len1, len2 = comparar_arquivos_hex(ori_b, mod_b)
-                                blocos = obter_blocos_diferencas(diffs)
-                                st.session_state.hex_atual = {
-                                    "timestamp": h_data, "veiculo": veic_b, "len1": len1, "len2": len2, 
-                                    "diffs": diffs, "blocos": blocos, "laudo": laudo_b, "bytes_orig": ori_b, 
-                                    "bytes_mod": mod_b, "salvo_no_banco": True, "cv_estimado": cv_b
-                                }
-                                st.session_state.view_addr_atual = max(0, blocos[0]['inicio'] - 100) if blocos else 0
-                                st.rerun()
+    st.title("🛠️ Estúdio Avançado de Calibração")
+    st.markdown("Engine unificada de alta performance com análise geométrica 3D, sombreamento delta 2D e grade de engenharia térmica.")
 
-        with st.container(border=True):
-            col1, col2 = st.columns(2)
-            with col1: arq_original = st.file_uploader("📂 Arquivo Original (.ori, .bin, .hex)", type=["bin", "hex", "ori", "mod", "dat"])
-            with col2: arq_modificado = st.file_uploader("📂 Arquivo Modificado (.mod, .bin, .hex)", type=["bin", "hex", "ori", "mod", "dat"])
-            info_veiculo = st.text_input("🚙 Qual o veículo/ECU?", placeholder="Ex: Bosch MD1CS001 / Siemens SID208")
-            
-            if st.button("🚀 Iniciar Engenharia Reversa", use_container_width=True, type="primary"):
-                if arq_original and arq_modificado:
-                    with st.spinner("Comparando matrizes binárias..."):
-                        bytes_orig = arq_original.read()
-                        bytes_mod = arq_modificado.read()
-                        diffs, len1, len2 = comparar_arquivos_hex(bytes_orig, bytes_mod)
-                        
-                        if diffs:
+    historico_global = carregar_historico_hex_geral()
+    if historico_global:
+        with st.expander("📚 Histórico Global de Comparações (Nuvem)", expanded=not st.session_state.get('hex_atual')):
+            for hist in historico_global:
+                h_id, h_veiculo, h_data, h_laudo = hist
+                col_ha, col_hb = st.columns([4, 1])
+                col_ha.write(f"🕒 **{h_data}** | Veículo/ECU: {h_veiculo or 'N/A'}")
+                if col_hb.button("📂 Abrir Comparação", key=f"btn_load_{h_id}"):
+                    with st.spinner("Descarregando..."):
+                        ori_b, mod_b, veic_b, laudo_b = carregar_arquivos_hex_por_id(h_id)
+                        if ori_b and mod_b:
+                            diffs, len1, len2 = comparar_arquivos_hex(ori_b, mod_b)
                             blocos = obter_blocos_diferencas(diffs)
-                            classificacao_exata = obter_classificacao_heuristica({"blocos": blocos, "bytes_mod": bytes_mod})
-                            laudo_ia = analisar_remap_com_ia(formatar_resumo_ia(blocos), info_veiculo, classificacao_exata)
-                            
-                            total_diffs = len(diffs)
-                            if total_diffs > 1500: 
-                                laudo_ia = "⚠️ **CRÍTICO - ALERTA DO CHIP:** Alteração massiva detectada no arquivo hex. Alto risco de corromper o checksum ou estourar limites térmicos da ECU.\n\n" + laudo_ia
-                            
-                            # Dino Virtual Estimador
-                            est_cv = min(75, int(total_diffs * 0.04) + 10) if diffs else 0
-                            
-                            st.session_state.hex_atual = {
-                                "timestamp": datetime.now().strftime("%d/%m/%Y %H:%M"), "veiculo": info_veiculo, 
-                                "len1": len1, "len2": len2, "diffs": diffs, "blocos": blocos, 
-                                "laudo": laudo_ia, "bytes_orig": bytes_orig, "bytes_mod": bytes_mod,
-                                "salvo_no_banco": False, "cv_estimado": est_cv
-                            }
+                            st.session_state.hex_atual = {"timestamp": h_data, "veiculo": veic_b, "len1": len1, "len2": len2, "diffs": diffs, "blocos": blocos, "laudo": laudo_b, "bytes_orig": ori_b, "bytes_mod": mod_b, "salvo": True}
                             st.session_state.view_addr_atual = max(0, blocos[0]['inicio'] - 100) if blocos else 0
-                            st.rerun() 
-                else: st.error("Insira ambos os arquivos.")
+                            st.rerun()
 
-        if st.session_state.get('hex_atual'):
-            dados = st.session_state.hex_atual
-            st.write("---")
-            st.subheader(f"📊 Workspace de Calibração: {dados['veiculo'] or 'ECU Não Identificada'}")
-            
-            col_i1, col_i2, col_i3, col_i4 = st.columns(4)
-            col_i1.metric("Tamanho Original", f"{dados['len1']} bytes")
-            col_i2.metric("Tamanho Modificado", f"{dados['len2']} bytes")
-            col_i3.metric("Modificações de Bytes", f"{len(dados['diffs'])}")
-            csum_mod = obter_checksum_arquivo(dados['bytes_mod'])
-            col_i4.metric("Checksum Modificado", f"0x{csum_mod:02X}")
-            
-            if dados.get('cv_estimado', 0) > 0:
-                st.success(f"🏎️ **Dino Virtual (Estimativa):** Calibração compatível com ganho de **+{dados['cv_estimado']} HP** teóricos.")
+    with st.container(border=True):
+        col1, col2 = st.columns(2)
+        with col1: arq_original = st.file_uploader("📂 Arquivo Original (.ori, .bin, .hex)", type=["bin", "hex", "ori", "mod", "dat"])
+        with col2: arq_modificado = st.file_uploader("📂 Arquivo Modificado (.mod, .bin, .hex)", type=["bin", "hex", "ori", "mod", "dat"])
+        info_veiculo = st.text_input("🚙 Qual o veículo/ECU?", placeholder="Ex: Bosch MD1CS001 / Siemens SID208")
+        
+        if st.button("🚀 Iniciar Engenharia Reversa", use_container_width=True, type="primary"):
+            if arq_original and arq_modificado:
+                with st.spinner("Comparando matrizes binárias..."):
+                    bytes_orig = arq_original.read(); bytes_mod = arq_modificado.read()
+                    diffs, len1, len2 = comparar_arquivos_hex(bytes_orig, bytes_mod)
+                    if diffs:
+                        blocos_encontrados = obter_blocos_diferencas(diffs)
+                        temp_dados = {"blocos": blocos_encontrados, "bytes_mod": bytes_mod}
+                        classificacao_exata = obter_classificacao_heuristica(temp_dados)
+                        laudo_ia = analisar_remap_com_ia(formatar_resumo_ia(blocos_encontrados), info_veiculo, classificacao_exata)
+                        
+                        st.session_state.hex_atual = {"timestamp": datetime.now().strftime("%d/%m/%Y %H:%M"), "veiculo": info_veiculo, "len1": len1, "len2": len2, "diffs": diffs, "blocos": blocos_encontrados, "laudo": laudo_ia, "bytes_orig": bytes_orig, "bytes_mod": bytes_mod, "salvo": False}
+                        st.session_state.view_addr_atual = max(0, blocos_encontrados[0]['inicio'] - 100) if blocos_encontrados else 0
+                        st.rerun() 
+            else: st.error("Insira ambos os arquivos.")
 
-            if not dados.get('salvo_no_banco', True):
-                st.warning("⚠️ Engenharia Reversa concluída. Clique abaixo para registrar a análise no histórico global.")
-                if st.button("💾 Gravar Análise permanentemente no Histórico", type="primary", use_container_width=True):
-                    salvar_comparacao_hex_nuvem(dados['veiculo'], dados['bytes_orig'], dados['bytes_mod'], dados['laudo'], dados['cv_estimado'])
-                    st.session_state.hex_atual['salvo_no_banco'] = True
-                    st.success("✅ Salvo permanentemente com sucesso!")
-                    st.rerun()
-            
-            st.info(dados['laudo'])
-            
-            # ⚙️ PAINEL DE ENGENHARIA E SLIDERS REATIVOS RESTAURADOS
-            st.markdown("### ⚙️ Painel de Engenharia (Conversão e Visualização Analítica)")
-            
-            addr_slider = st.slider("鼠标 Navegação Rápida de Endereços", 0, len(dados['bytes_orig']), value=int(st.session_state.get('view_addr_atual', 0)), step=1, format="0x%x")
-            zoom_slider = st.slider("🔍 Largura da Janela (Zoom Base)", 64, 4096, value=int(st.session_state.get('zoom_janela', 256)), step=32)
-            
-            st.session_state.view_addr_atual = addr_slider
-            st.session_state.zoom_janela = zoom_slider
+    if st.session_state.get('hex_atual'):
+        dados = st.session_state.hex_atual
+        st.write("---")
+        
+        expandir_graficos = st.toggle("🔲 Ativar Modo Ampliado no Painel (Gráficos Longos)", value=False)
+        altura_dinamica = 800 if expandir_graficos else 450
+        
+        st.subheader(f"📊 Workspace de Calibração: {dados['veiculo'] or 'ECU Não Identificada'}")
+        
+        col_i1, col_i2, col_i3, col_i4 = st.columns(4)
+        col_i1.metric("Tamanho Original", f"{dados['len1']} bytes")
+        col_i2.metric("Tamanho Modificado", f"{dados['len2']} bytes")
+        col_i3.metric("Modificações de Bytes", f"{len(dados['diffs'])}")
+        csum_mod = obter_checksum_arquivo(dados['bytes_mod'])
+        col_i4.metric("Checksum Modificado", f"0x{csum_mod:02X}")
+        st.info(dados['laudo'])
 
-            with st.expander("📊 Configurações Avançadas de Interpretação Matrix/Mapa", expanded=True):
-                col_c1, col_c2, col_c3 = st.columns(3)
-                escala_op = col_c1.selectbox("Formato de Bits:", ["8 bits", "16 bits", "32 bits"], index=1)
-                byteorder_op = col_c2.selectbox("Endereçamento (Endian):", ["big", "little"], index=0)
-                signed_op = col_c3.checkbox("Valores com Sinal (Signed)", value=False)
+        if not dados.get('salvo', True):
+            if st.button("💾 Gravar Análise permanentemente no Histórico", type="primary", use_container_width=True):
+                salvar_comparacao_hex_nuvem(dados['veiculo'], dados['bytes_orig'], dados['bytes_mod'], dados['laudo'])
+                st.session_state.hex_atual['salvo'] = True
+                st.success("✅ Salvo permanentemente com sucesso!"); st.rerun()
+        
+        st.markdown("### ⚙️ Painel de Engenharia (Conversão e Visualização Analítica)")
+        
+        c_conf1, c_conf2, c_conf3, c_conf4 = st.columns(4)
+        escala_op = c_conf1.selectbox("📏 Resolução da ECU", ["8 bits", "16 bits", "32 bits"], index=1)
+        st.session_state.escala_op_saved = escala_op
+        
+        bits_val = int(escala_op.split()[0]); b_step = bits_val // 8
+        byteorder_str = 'big' if "Big" in c_conf2.selectbox("🔄 Endianness", ["Big Endian (Motorola)", "Little Endian (Intel)"]) else 'little'
+        st.session_state.byteorder_saved = byteorder_str
+        
+        is_signed = "Signed" in c_conf3.selectbox("📉 Arquitetura Numérica", ["Unsigned (Sem Sinal)", "Signed (Com Sinal)"])
+        st.session_state.signed_saved = is_signed
+        
+        inverter_val = c_conf4.toggle("Inverter Z-Axis (3D)", value=False)
+        st.session_state.inverter_saved = inverter_val
+
+        c_an1, c_an2, c_an3 = st.columns([1, 1, 2])
+        fator = c_an1.number_input("✖️ Fator de Conversão", value=1.0, step=0.001, format="%.4f")
+        st.session_state.fator_saved = fator
+        offset = c_an2.number_input("➕ Offset Base", value=0.0, step=1.0)
+        st.session_state.offset_saved = offset
+        modo_exibicao = c_an3.radio("📊 Modo de Leitura", ["Valores Absolutos Convertidos", "Diferença Percentual Absoluta (%)"], horizontal=True)
+        st.session_state.modo_exibicao_saved = modo_exibicao
+
+        opcoes_blocos = ["--- Selecione um Bloco para Saltar ---"]
+        for i, b in enumerate(dados['blocos']):
+            ini, fim, qtd = b['inicio'], b['fim'], b['qtd']
+            b_mod = dados['bytes_mod'][ini:fim+1]
+            t_real = len(b_mod)
+            if t_real > 0:
+                zero_ratio = b_mod.count(0x00) / t_real
+                ff_ratio = b_mod.count(0xFF) / t_real
+                tipo_label = "OFF (DPF/EGR/DTC)" if (b['qtd'] <= 8 or zero_ratio >= 0.60 or ff_ratio >= 0.85) else "MOD (Remap)"
+            else: tipo_label = "Dados Desconhecidos"
+            opcoes_blocos.append(f"Bloco {i+1}: 0x{ini:06X} até 0x{fim:06X} ({qtd}b) -> {tipo_label}")
+
+        def atualizar_por_bloco():
+            sel = st.session_state.select_block_busca
+            if "Bloco" in sel:
+                match = re.search(r'0x([0-9A-Fa-f]+)', sel)
+                if match: st.session_state.view_addr_atual = max(0, int(match.group(1), 16) - (20 * b_step)) 
+
+        def ir_para_endereco():
+            val = st.session_state.goto_input
+            if val:
+                try: st.session_state.view_addr_atual = int(val, 16)
+                except ValueError: pass
+
+        col_nav1, col_nav2 = st.columns([2, 1])
+        with col_nav1: st.selectbox("⚡ Saltos Estratégicos (Indexador de Mapas)", opcoes_blocos, key="select_block_busca", on_change=atualizar_por_bloco)
+        with col_nav2: st.text_input("🔍 Ir para Endereço (Hex GOTO)", placeholder="Ex: 1C4A00", key="goto_input", on_change=ir_para_endereco)
+
+        st.markdown("---")
+        
+        tamanho_total_arquivo = len(dados['bytes_orig'])
+        janela_pontos = st.session_state.zoom_janela
+        max_addr_possivel = max(1, tamanho_total_arquivo - (janela_pontos * b_step))
+        if st.session_state.view_addr_atual > max_addr_possivel: st.session_state.view_addr_atual = max_addr_possivel
+
+        janela_bytes_tamanho = janela_pontos * b_step
+        addr_inicio = st.session_state.view_addr_atual
+        addr_fim = min(tamanho_total_arquivo, addr_inicio + janela_bytes_tamanho)
+
+        bytes_janela_ori = dados['bytes_orig'][addr_inicio:addr_fim]
+        bytes_janela_mod = dados['bytes_mod'][addr_inicio:addr_fim]
+
+        valores_ori_brutos = processar_bytes_para_valores(bytes_janela_ori, bits_val, is_signed, byteorder_str)
+        valores_mod_brutos = processar_bytes_para_valores(bytes_janela_mod, bits_val, is_signed, byteorder_str)
+
+        linhas, colunas = detectar_dimensao_mapa(valores_ori_brutos, valores_mod_brutos)
+        total_elementos = linhas * colunas
+
+        valores_ori_brutos = valores_ori_brutos[:total_elementos]
+        valores_mod_brutos = valores_mod_brutos[:total_elementos]
+
+        valores_ori_eng = (valores_ori_brutos * fator) + offset
+        valores_mod_eng = (valores_mod_brutos * fator) + offset
+        
+        with np.errstate(divide='ignore', invalid='ignore'):
+            valores_delta_pct = np.where(valores_ori_eng != 0, ((valores_mod_eng - valores_ori_eng) / np.abs(valores_ori_eng)) * 100.0, 0.0)
+            valores_delta_pct = np.nan_to_num(valores_delta_pct)
+
+        matriz_ori_eng = valores_ori_eng.reshape((linhas, colunas))
+        matriz_mod_eng = valores_mod_eng.reshape((linhas, colunas))
+        matriz_delta_pct = valores_delta_pct.reshape((linhas, colunas))
+
+        tab_2d, tab_3d, tab_grid = st.tabs(["📈 Gráfico 2D (Contínuo com Minimapa)", "📐 Superfície 3D (Topografia)", "🧮 Grade Térmica (Hex Dump)"])
+
+        with tab_2d:
+            st.slider("🖱️ Navegação Rápida (Barra de Rolagem de Endereços)", 0, max_addr_possivel, key="view_addr_atual", step=1, format="0x%x")
+            st.slider("🔍 Largura da Janela (Zoom Base)", min_value=64, max_value=4096, step=32, key="zoom_janela")
+
+            MACRO_WINDOW_POINTS = 16384 
+            macro_start = max(0, st.session_state.view_addr_atual - (MACRO_WINDOW_POINTS // 4) * b_step)
+            macro_end = min(tamanho_total_arquivo, macro_start + MACRO_WINDOW_POINTS * b_step)
+            
+            bytes_macro_ori = dados['bytes_orig'][macro_start:macro_end]
+            bytes_macro_mod = dados['bytes_mod'][macro_start:macro_end]
+            
+            ori_y_macro = processar_bytes_para_valores(bytes_macro_ori, bits_val, is_signed, byteorder_str)
+            mod_y_macro = processar_bytes_para_valores(bytes_macro_mod, bits_val, is_signed, byteorder_str)
+            
+            valid_len_ori = (len(bytes_macro_ori) // b_step) * b_step
+            valid_len_mod = (len(bytes_macro_mod) // b_step) * b_step
+            min_valid_len = min(valid_len_ori, valid_len_mod)
+            
+            if inverter_val:
+                max_v = (2**bits_val) - 1
+                ori_y_macro = max_v - ori_y_macro
+                mod_y_macro = max_v - mod_y_macro
                 
-                col_c4, col_c5, col_c6 = st.columns(3)
-                fator_op = col_c4.number_input("Fator de Multiplicação:", value=1.0, step=0.001, format="%.4f")
-                offset_op = col_c5.number_input("Offset de Ajuste:", value=0.0, step=1.0)
-                tipo_grafico_hex = col_c6.selectbox("Tipo de Visualização Gráfica:", ["Matriz 2D (Heatmap)", "Superfície 3D"])
-                
-            bits_val = int(escala_op.split()[0])
-            b_step = bits_val // 8
-            addr = st.session_state.view_addr_atual
-            zoom = st.session_state.zoom_janela
+            eixo_x_macro = np.arange(macro_start, macro_start + min_valid_len, b_step)
+            ori_y_macro = ori_y_macro[:len(eixo_x_macro)]
+            mod_y_macro = mod_y_macro[:len(eixo_x_macro)]
             
-            janela_bytes_tamanho = zoom * b_step
-            addr_fim = min(len(dados['bytes_orig']), addr + janela_bytes_tamanho)
+            fig_2d = go.Figure()
+            fig_2d.add_trace(go.Scatter(x=eixo_x_macro, y=ori_y_macro, mode='lines', name='Original (ORI)', line=dict(color='#1E88E5', width=1.5, simplify=True)))
+            fig_2d.add_trace(go.Scatter(x=eixo_x_macro, y=mod_y_macro, mode='lines', name='Modificado (MOD)', line=dict(color='#FF0000', width=1.5, simplify=True)))
 
-            valores_originais_mapa = (processar_bytes_para_valores(dados['bytes_orig'][addr:addr_fim], bits_val, signed_op, byteorder_op) * fator_op) + offset_op
-            valores_modificados_mapa = (processar_bytes_para_valores(dados['bytes_mod'][addr:addr_fim], bits_val, signed_op, byteorder_op) * fator_op) + offset_op
+            x_zoom_start = st.session_state.view_addr_atual
+            x_zoom_end = st.session_state.view_addr_atual + (janela_pontos * b_step)
+
+            fig_2d.update_layout(
+                height=altura_dinamica, paper_bgcolor='#1E1E1E', plot_bgcolor='#1E1E1E', font=dict(color='white'), dragmode='pan', hovermode='closest',   
+                xaxis=dict(
+                    title="Endereço Hexadecimal", tickformat="06X", tickprefix="0x", range=[x_zoom_start, x_zoom_end], 
+                    showspikes=True, spikecolor="#9C27B0", spikesnap="cursor", spikemode="across", spikethickness=1, spikedash="dot", 
+                    rangeslider=dict(visible=True, bgcolor='rgba(156, 39, 176, 0.15)', bordercolor='#9C27B0', borderwidth=2)
+                ),
+                yaxis=dict(title="Valor", fixedrange=False, showspikes=True, spikecolor="#9C27B0", spikesnap="cursor", spikemode="across", spikethickness=1, spikedash="dot"),
+                margin=dict(l=10, r=10, b=10, t=30), legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+            )
+            st.plotly_chart(fig_2d, use_container_width=True, config={'scrollZoom': True, 'displayModeBar': True})
+
+        with tab_3d:
+            st.caption(f"📐 Geometria do mapa detectada: Matriz de **{linhas} linhas** x **{colunas} colunas**")
+            fig_3d_aba = go.Figure()
+            z_dir = "reversed" if inverter_val else True
+            if "Percentual" in modo_exibicao:
+                fig_3d_aba.add_trace(go.Surface(z=matriz_delta_pct, name='Delta %', colorscale='Viridis', showscale=True))
+            else:
+                fig_3d_aba.add_trace(go.Surface(z=matriz_ori_eng, name='ORI Base', colorscale='Blues', opacity=0.5, showscale=False))
+                fig_3d_aba.add_trace(go.Surface(z=matriz_mod_eng, name='MOD Remap', colorscale='Reds', opacity=1.0, showscale=True))
+
+            fig_3d_aba.update_layout(height=altura_dinamica, paper_bgcolor='#1E1E1E', margin=dict(l=0, r=0, b=0, t=20), font=dict(color='white'), scene=dict(zaxis=dict(autorange=z_dir), camera=dict(eye=dict(x=1.6, y=1.6, z=1.3))))
+            st.plotly_chart(fig_3d_aba, use_container_width=True, config={'displayModeBar': True, 'scrollZoom': True, 'displaylogo': False})
             
-            if len(valores_originais_mapa) > 0 and len(valores_modificados_mapa) > 0:
-                linhas, colunas = detectar_dimensao_mapa(valores_originais_mapa, valores_modificados_mapa)
-                elementos_validos = linhas * colunas
-                matriz_ori = valores_originais_mapa[:elementos_validos].reshape((linhas, colunas))
-                matriz_mod = valores_modificados_mapa[:elementos_validos].reshape((linhas, colunas))
-                
-                if tipo_grafico_hex == "Matriz 2D (Heatmap)":
-                    fig_map = go.Figure(data=go.Heatmap(z=matriz_mod - matriz_ori, colorscale='RdBu', reversescale=True))
-                    fig_map.update_layout(title="Diferencial de Calibração (MOD - ORI)", paper_bgcolor='#121212', plot_bgcolor='#121212', font=dict(color='white'))
-                    st.plotly_chart(fig_map, use_container_width=True)
-                else:
-                    fig_map = go.Figure()
-                    fig_map.add_trace(go.Surface(z=matriz_ori, name='Original (ORI)', colorscale='Blues', opacity=0.5, showscale=False))
-                    fig_map.add_trace(go.Surface(z=matriz_mod, name='Modificado (MOD)', colorscale='Reds', opacity=0.9, showscale=False))
-                    fig_map.update_layout(title="Topologia Tridimensional Comparativa", scene=dict(xaxis=hud_axis_style, yaxis=hud_axis_style, zaxis=hud_axis_style), paper_bgcolor='#121212', font=dict(color='white'), margin=dict(l=0, r=0, b=0, t=30))
-                    st.plotly_chart(fig_map, use_container_width=True)
-                    
-                if st.button("🖥️ Expandir para Tela Cheia (Foco 3D)", use_container_width=True):
-                    st.session_state.focus_mode = '3D'
-                    st.session_state.escala_op_saved = escala_op
-                    st.session_state.byteorder_saved = byteorder_op
-                    st.session_state.signed_saved = signed_op
-                    st.session_state.fator_saved = fator_op
-                    st.session_state.offset_saved = offset_op
-                    st.rerun()
+            if st.button("🔲 Expandir Gráfico 3D em Tela Cheia", key="btn_fs_3d", use_container_width=True):
+                st.session_state.focus_mode = '3D'
+                st.rerun()
 
-            st.markdown("---")
-            st.markdown("### 🔍 Detalhamento Técnico Completo (Tabela Hexadecimal)")
-            df_diff = pd.DataFrame([{k: v for k, v in d.items() if k != "EnderecoInt"} for d in dados['diffs']])
-            st.dataframe(df_diff, use_container_width=True, height=300)
+        with tab_grid:
+            st.markdown("##### Matriz de Dados (Células da ECU)")
+            matriz_ativa = matriz_delta_pct if "Percentual" in modo_exibicao else matriz_mod_eng
+            colunas_labels = [f"Col {j+1}" for j in range(colunas)]
+            linhas_labels = [f"0x{addr_inicio + (i * colunas * b_step):06X}" for i in range(linhas)]
+            df_matriz = pd.DataFrame(matriz_ativa, index=linhas_labels, columns=colunas_labels)
+            
+            if "Percentual" in modo_exibicao:
+                df_formatado = df_matriz.map(lambda x: f"{x:+.2f}%")
+                st.dataframe(df_formatado, use_container_width=True, height=altura_dinamica)
+            else:
+                st.dataframe(df_matriz, use_container_width=True, height=altura_dinamica)
+            
+        st.markdown("---")
+        st.markdown("### 🔍 Detalhamento Técnico Completo (Tabela Hexadecimal)")
+        df_diff = pd.DataFrame([{k: v for k, v in d.items() if k != "EnderecoInt"} for d in dados['diffs']])
+        st.dataframe(df_diff, use_container_width=True, height=350 if expandir_graficos else 250)
