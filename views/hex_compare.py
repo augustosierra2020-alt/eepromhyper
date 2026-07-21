@@ -6,11 +6,11 @@ import pandas as pd
 from typing import Tuple, List, Dict, Any
 from datetime import datetime
 
-# Importações da nossa arquitetura modular
+# Importações da infraestrutura modular estável
 from core.db import get_db_connection
 from services.hf_sync import backup_local_para_nuvem_async
 
-# Tenta importar o C++ para aceleração, caso exista
+# Suporte ao motor C++ nativo
 try:
     import hypertork_cpp
     HAS_CPP = True
@@ -21,7 +21,7 @@ MAX_DIFFS = 3000
 GAP_THRESHOLD = 48
 
 # ==========================================
-# FUNÇÕES CORE: COMPARADOR HEX UNIFICADO
+# FUNÇÕES CORE: ENGENHARIA REVERSA E PROCESSAMENTO
 # ==========================================
 def processar_bytes_para_valores(bytes_crus, bits=16, signed=False, endian='big'):
     if not bytes_crus: return np.array([])
@@ -99,9 +99,11 @@ def formatar_resumo_ia(blocos):
     return resumo_ia
 
 def analisar_remap_com_ia(resumo_blocos, info_veiculo, classificacao):
-    # Nota: A IA foi isolada no pop-up global conforme a arquitetura modular, 
-    # mas mantemos a simulação local para o laudo rápido.
-    return f"🛠️ **Análise Heurística Rápida:**\n\nVeículo: {info_veiculo}\nClassificação detectada: **{classificacao}**\n\nDetalhes de Modificação:\n{resumo_blocos}"
+    return f"🛠️ **Laudo Técnico Preliminar de Calibração (Chip Engine):**\n\nIdentificação da ECU: {info_veiculo}\nAssinatura do Firmware: **{classificacao}**\n\nEstrutura Topológica das Modificações:\n{resumo_blocos}"
+
+def obter_checksum_arquivo(dados_bytes):
+    if not dados_bytes: return 0
+    return sum(np.frombuffer(dados_bytes, dtype=np.uint8)) & 0xFF
 
 # --- BANCO DE DADOS HEX MODULARIZADO ---
 def salvar_comparacao_hex_nuvem(veiculo, file_ori, file_mod, laudo, cv):
@@ -114,9 +116,9 @@ def salvar_comparacao_hex_nuvem(veiculo, file_ori, file_mod, laudo, cv):
         except: pass
         cursor.execute("INSERT INTO hex_history (veiculo, data, file_ori, file_mod, laudo, cv_estimado) VALUES (?, ?, ?, ?, ?, ?)", (veiculo, data_formatada, ori_comp, mod_comp, laudo, int(cv)))
         conn.commit()
-        backup_local_para_nuvem_async() # Chamada assíncrona modular
+        backup_local_para_nuvem_async()
     except Exception as e:
-        st.error(f"Erro ao persistir histórico hex: {e}")
+        st.error(f"Erro ao salvar histórico hex: {e}")
 
 def carregar_historico_hex_geral():
     conn = get_db_connection()
@@ -138,14 +140,13 @@ def carregar_arquivos_hex_por_id(hist_id: int):
     except Exception: pass
     return None, None, None, None, None
 
-
 # ==========================================
-# VIEW PRINCIPAL (RENDERIZADOR DA TELA)
+# INTERFACE DO COMPARADOR E RENDERIZAÇÃO
 # ==========================================
 def render_hex_compare():
     hud_axis_style = dict(backgroundcolor="#121212", gridcolor="#333333", showbackground=True, zerolinecolor="#333333")
     
-    # MODO FOCO 3D TELA CHEIA
+    # 🖥️ MODO FOCO 3D TELA CHEIA (RECURSO RESTAURADO)
     if st.session_state.get('focus_mode') == '3D' and st.session_state.get('hex_atual'):
         dados = st.session_state.hex_atual
         st.subheader("🔍 Modo Expandido Total - Mapa 3D")
@@ -178,7 +179,7 @@ def render_hex_compare():
         st.plotly_chart(fig_3d, use_container_width=True)
         st.stop()
 
-    st.title("🛠️ Estúdio Avançado de Calibração")
+    st.title("🛠️ Estúdio Avançado de Calibração HEX")
     
     aba_comp, aba_id = st.tabs(["⚖️ Comparação e Gráficos", "🔍 Identificador de Firmware (ECU ID)"])
     
@@ -192,7 +193,7 @@ def render_hex_compare():
                 st.json(info)
                 st.success("Análise de metadados estruturais concluída.")
             except Exception as e:
-                st.error(f"Erro no parser de ECU: {e}")
+                st.error(f"Erro no módulo parser de firmware: {e}")
     
     with aba_comp:
         historico_global = carregar_historico_hex_geral()
@@ -234,12 +235,11 @@ def render_hex_compare():
                             classificacao_exata = obter_classificacao_heuristica({"blocos": blocos, "bytes_mod": bytes_mod})
                             laudo_ia = analisar_remap_com_ia(formatar_resumo_ia(blocos), info_veiculo, classificacao_exata)
                             
-                            # Copiloto Anti-Quebra
                             total_diffs = len(diffs)
                             if total_diffs > 1500: 
                                 laudo_ia = "⚠️ **CRÍTICO - ALERTA DO CHIP:** Alteração massiva detectada no arquivo hex. Alto risco de corromper o checksum ou estourar limites térmicos da ECU.\n\n" + laudo_ia
                             
-                            # Cálculo Dinâmico (Dino Virtual)
+                            # Dino Virtual Estimador
                             est_cv = min(75, int(total_diffs * 0.04) + 10) if diffs else 0
                             
                             st.session_state.hex_atual = {
@@ -261,8 +261,12 @@ def render_hex_compare():
             col_i1.metric("Tamanho Original", f"{dados['len1']} bytes")
             col_i2.metric("Tamanho Modificado", f"{dados['len2']} bytes")
             col_i3.metric("Modificações de Bytes", f"{len(dados['diffs'])}")
-            col_i4.metric("Dino Virtual Estimado", f"+{dados.get('cv_estimado', 0)} cv")
+            csum_mod = obter_checksum_arquivo(dados['bytes_mod'])
+            col_i4.metric("Checksum Modificado", f"0x{csum_mod:02X}")
             
+            if dados.get('cv_estimado', 0) > 0:
+                st.success(f"🏎️ **Dino Virtual (Estimativa):** Calibração compatível com ganho de **+{dados['cv_estimado']} HP** teóricos.")
+
             if not dados.get('salvo_no_banco', True):
                 st.warning("⚠️ Engenharia Reversa concluída. Clique abaixo para registrar a análise no histórico global.")
                 if st.button("💾 Gravar Análise permanentemente no Histórico", type="primary", use_container_width=True):
@@ -273,10 +277,10 @@ def render_hex_compare():
             
             st.info(dados['laudo'])
             
-            # Controles Visuais Unificados
+            # ⚙️ PAINEL DE ENGENHARIA E SLIDERS REATIVOS RESTAURADOS
             st.markdown("### ⚙️ Painel de Engenharia (Conversão e Visualização Analítica)")
             
-            addr_slider = st.slider("🖱️ Navegação Rápida de Endereços", 0, len(dados['bytes_orig']), value=int(st.session_state.get('view_addr_atual', 0)), step=1, format="0x%x")
+            addr_slider = st.slider("鼠标 Navegação Rápida de Endereços", 0, len(dados['bytes_orig']), value=int(st.session_state.get('view_addr_atual', 0)), step=1, format="0x%x")
             zoom_slider = st.slider("🔍 Largura da Janela (Zoom Base)", 64, 4096, value=int(st.session_state.get('zoom_janela', 256)), step=32)
             
             st.session_state.view_addr_atual = addr_slider

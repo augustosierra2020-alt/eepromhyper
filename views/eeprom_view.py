@@ -34,7 +34,8 @@ def buscar_logo_montadora_automatica(montadora):
 def renderizar_logo_harmonizada(caminho, montadora_nome=""):
     if not caminho or not os.path.exists(caminho): return False
     try:
-        with open(caminho, "rb") as image_file: encoded_string = base64.b64encode(image_file.read()).decode()
+        with open(caminho, "rb") as image_file: 
+            encoded_string = base64.b64encode(image_file.read()).decode()
         st.markdown(f"""
             <div style="display: flex; justify-content: center; align-items: center; height: 110px; width: 100%; background-color: #FFFFFF; border-radius: 12px; padding: 10px; box-shadow: inset 0 0 0 1px rgba(0,0,0,0.05); margin-bottom: 10px;">
                 <img src="data:image/png;base64,{encoded_string}" style="max-height: 90px; max-width: 100%; object-fit: contain; pointer-events: none; user-select: none; -webkit-user-drag: none;">
@@ -74,7 +75,8 @@ def render_eeprom():
         
         if caminho_logo_m and os.path.exists(caminho_logo_m):
             try:
-                with open(caminho_logo_m, "rb") as lf: enc_logo_m = base64.b64encode(lf.read()).decode()
+                with open(caminho_logo_m, "rb") as lf: 
+                    enc_logo_m = base64.b64encode(lf.read()).decode()
                 st.markdown(f"""
                     <div style="display: flex; align-items: center; gap: 15px; margin-bottom: 20px;">
                         <img src="data:image/png;base64,{enc_logo_m}" style="max-height: 45px; max-width: 120px; object-fit: contain;">
@@ -117,7 +119,7 @@ def render_eeprom():
                         cursor.execute("SELECT id FROM veiculos WHERE montadora_nome = ? AND modelo = ?", (m_clean, mod_clean))
                         v_id = cursor.fetchone()[0]
                         
-                        # Espelho físico em pastas locais
+                        # Cria o espelho físico local nas pastas estruturadas
                         pasta = os.path.join(BASE_DIR, m_clean, mod_clean)
                         os.makedirs(pasta, exist_ok=True)
                         with open(os.path.join(pasta, "dados.json"), "w", encoding="utf-8") as f:
@@ -127,8 +129,9 @@ def render_eeprom():
                             cursor.execute("DELETE FROM graficos WHERE veiculo_id = ?", (v_id,))
                             for idx, img_file in enumerate(uploaded_imgs[:6]):
                                 img_bytes = img_file.read()
-                                cursor.execute("INSERT INTO graficos (veiculo_id, foto, ordem) VALUES (?, ?, ?)", (v_id, img_bytes, idx+1))
-                                with open(os.path.join(pasta, f"grafico_{idx+1}.png"), "wb") as f_img: f_img.write(img_bytes)
+                                cursor.execute("INSERT INTO graficos (veiculo_id, foto, ordem) VALUES (?, ?, ?, ?)", (v_id, img_bytes, idx+1, ""))
+                                with open(os.path.join(pasta, f"grafico_{idx+1}.png"), "wb") as f_img: 
+                                    f_img.write(img_bytes)
                         conn.commit()
                         backup_local_para_nuvem_async()
                         st.success("Veículo inserido com sucesso!")
@@ -153,21 +156,24 @@ def render_eeprom():
                         st.write(f"📝 **Notas e Instruções de Bancada:**\n{dados_v['detalhes']}")
                     
                     if dados_v.get('graficos'):
-                        st.markdown("#### 🖼️ Gráficos e Arquivos de Apoio Salvos")
+                        st.markdown("#### 🖼️ Mapas e Imagens de Apoio Salvas")
                         g_cols = st.columns(2)
                         for g_idx, g_bytes in enumerate(dados_v['graficos']):
                             with g_cols[g_idx % 2]:
-                                st.image(g_bytes, caption=f"Topologia Visual {g_idx+1}", use_container_width=True)
+                                st.image(g_bytes, caption=f"Diagrama/Esquema Técnico {g_idx+1}", use_container_width=True)
                                 
                     if st.button("🗑️ Excluir Este Modelo da Base", type="primary", use_container_width=True):
                         cursor.execute("DELETE FROM veiculos WHERE id = ?", (dados_v['id'],))
                         conn.commit()
                         pasta = os.path.join(BASE_DIR, higienizar_nome(montadora_atual), higienizar_nome(st.session_state.escolha_modelo))
-                        if os.path.exists(pasta): shutil.rmtree(pasta)
+                        if os.path.exists(pasta): 
+                            shutil.rmtree(pasta)
                         backup_local_para_nuvem_async()
                         st.session_state.escolha_modelo = ""; st.rerun()
-                else: st.error("Erro interno ao ler arquivos estruturais deste veículo.")
-            else: st.info("💡 Selecione um modelo da lista ao lado para expandir as posições de memória, mapas de injeção e fotos associadas.")
+                else: 
+                    st.error("Erro interno ao ler arquivos estruturais deste veículo.")
+            else: 
+                st.info("💡 Selecione um modelo da lista ao lado para carregar o histórico de pinagens, mapas de injeção e esquemas elétricos associados.")
 
         st.markdown("---")
         if st.button("⬅️ Mudar de Montadora (Voltar)", type="secondary", use_container_width=True): 
