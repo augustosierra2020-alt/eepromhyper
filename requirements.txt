@@ -1,0 +1,10 @@
+streamlit
+pillow
+huggingface_hub
+plotly
+numpy
+pandas
+duckduckgo-search
+openpyxl
+python-docx
+matplotlib

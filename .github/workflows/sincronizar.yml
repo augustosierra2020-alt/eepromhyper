@@ -1,0 +1,20 @@
+name: Sincronizar com Hugging Face
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  sync-to-hub:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Baixar codigo do GitHub
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          lfs: true
+
+      - name: Enviar para o Hugging Face
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          git push --force https://sergioaugusto:$HF_TOKEN@huggingface.co/spaces/GrizzlyBear25/HyperTork_ main

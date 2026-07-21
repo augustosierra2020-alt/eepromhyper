@@ -1,0 +1,8 @@
+build/
+*.db
+*.db.bak
+__pycache__/
+*.pyd
+*.obj
+.env
+build/
