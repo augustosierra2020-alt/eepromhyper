@@ -25,8 +25,9 @@ def render_home():
 
     st.markdown("<h2 style='text-align: center; color: #1E88E5; margin-bottom: 30px;'>Painel de Controle Operacional</h2>", unsafe_allow_html=True)
 
-    # Grid Técnico de Atalhos Rápidos para Acesso
-    col1, col2, col3 = st.columns(3)
+    # Grid Técnico de Atalhos Rápidos para Acesso (Agora com as 4 colunas originais!)
+    col1, col2, col3, col4 = st.columns(4)
+    
     with col1:
         with st.container(border=True):
             st.markdown("### 🛠️ HEX Studio")
@@ -42,8 +43,16 @@ def render_home():
             if st.button("Abrir EEPROM Maps", key="hub_go_eeprom", use_container_width=True):
                 st.session_state.app_mode = "EEPROM"
                 st.rerun()
-                
+
     with col3:
+        with st.container(border=True):
+            st.markdown("### 📊 Gestão & OS")
+            st.write("Gerenciamento financeiro, ordens de serviço em lote e emissão de laudos em PDF.")
+            if st.button("Abrir Gestão & OS", key="hub_go_gestao", use_container_width=True):
+                st.session_state.app_mode = "GESTAO_OS"
+                st.rerun()
+                
+    with col4:
         with st.container(border=True):
             st.markdown("### 🚗 Scanner OBD2")
             st.write("Diagnóstico guiado por Inteligência Artificial ativa e cruzamento de falhas DTC.")
