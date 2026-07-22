@@ -31,7 +31,6 @@ def buscar_logo_montadora_automatica(montadora):
         mont_alvo = limpar_para_comparacao(montadora)
         for arquivo in arquivos:
             if not arquivo.lower().endswith(('.png', '.jpg', '.jpeg', '.webp', '.gif')): continue
-            # Remove o padrão 'LOGO' do nome do arquivo para cruzar perfeitamente
             nome_arq = limpar_para_comparacao(os.path.splitext(arquivo)[0]).replace("LOGO", "")
             if mont_alvo == nome_arq or mont_alvo in nome_arq or nome_arq in mont_alvo: 
                 return os.path.join(LOGOS_DIR, arquivo)
@@ -48,16 +47,20 @@ def renderizar_logo_harmonizada(caminho, montadora_nome=""):
             </div>
         """, unsafe_allow_html=True)
         return True
-    except: return False
+    except Exception:
+        return False
 
 def listar_montadoras():
     conn = get_db_connection()
     try:
         cursor = conn.cursor()
         cursor.execute("SELECT nome FROM montadoras")
-        return sorted(list(set([higienizar_nome(r[0]) for r in cursor.fetchall()])))
-    except Exception: return []
-    finally: conn.close()
+        rows = cursor.fetchall()
+        return sorted(list(set([higienizar_nome(r[0]) for r in rows if r[0]])))
+    except Exception:
+        return []
+    finally:
+        conn.close()
 
 def listar_modelos(montadora):
     if not montadora: return []
@@ -65,9 +68,12 @@ def listar_modelos(montadora):
     try:
         cursor = conn.cursor()
         cursor.execute("SELECT modelo FROM veiculos WHERE montadora_nome = ?", (higienizar_nome(montadora),))
-        return sorted(list(set([higienizar_nome(r[0]) for r in cursor.fetchall()])))
-    except Exception: return []
-    finally: conn.close()
+        rows = cursor.fetchall()
+        return sorted(list(set([higienizar_nome(r[0]) for r in rows if r[0]])))
+    except Exception:
+        return []
+    finally:
+        conn.close()
 
 def buscar_dados_veiculo_unificado(montadora, modelo):
     result = None
@@ -79,8 +85,10 @@ def buscar_dados_veiculo_unificado(montadora, modelo):
         if row:
             cursor.execute("SELECT foto FROM graficos WHERE veiculo_id = ? ORDER BY ordem", (row[0],))
             result = {"id": row[0], "posicao_inicio": row[1], "intervalo": row[2], "valores_invertidos": row[3], "escala": row[4], "detalhes": row[5], "graficos": [f[0] for f in cursor.fetchall()]}
-    except Exception: pass
-    finally: conn.close()
+    except Exception: 
+        pass
+    finally:
+        conn.close()
     return result
 
 def salvar_novo_veiculo_hibrido(montadora, modelo, inicio, intervalo, info_extra, valores_invertidos, escala, imagens_upload=None):
@@ -110,7 +118,8 @@ def salvar_novo_veiculo_hibrido(montadora, modelo, inicio, intervalo, info_extra
     except Exception as e:
         st.error(f"Erro ao salvar veículo: {e}")
         return False
-    finally: conn.close()
+    finally:
+        conn.close()
 
 def excluir_veiculo_db(montadora, modelo):
     conn = get_db_connection()
@@ -121,8 +130,10 @@ def excluir_veiculo_db(montadora, modelo):
         pasta = os.path.join(BASE_DIR, higienizar_nome(montadora), higienizar_nome(modelo))
         if os.path.exists(pasta): shutil.rmtree(pasta)
         backup_local_para_nuvem_async()
-    except Exception: pass
-    finally: conn.close()
+    except Exception: 
+        pass
+    finally:
+        conn.close()
 
 def excluir_montadora_db(montadora):
     conn = get_db_connection()
@@ -133,8 +144,10 @@ def excluir_montadora_db(montadora):
         conn.commit()
         if os.path.exists(os.path.join(BASE_DIR, mont)): shutil.rmtree(os.path.join(BASE_DIR, mont))
         backup_local_para_nuvem_async()
-    except Exception: pass
-    finally: conn.close()
+    except Exception: 
+        pass
+    finally:
+        conn.close()
 
 def render_eeprom():
     if 'montadora_selecionada' not in st.session_state: st.session_state.montadora_selecionada = ""
@@ -161,6 +174,7 @@ def render_eeprom():
                                     st.markdown(f"<div style='display: flex; justify-content: center; align-items: center; height: 110px; width: 100%; margin-bottom: 10px; background: linear-gradient(135deg, #1E88E5 0%, #0D47A1 100%); border-radius: 12px; border: 1px solid rgba(0,0,0,0.05);'><p style='text-align:center; font-weight:bold; color:#FFFFFF; margin:0; padding: 5px; font-size: 0.95rem;'>🏭 {m}</p></div>", unsafe_allow_html=True)
                                 if st.button(f"{m}", key=f"home_{m}", use_container_width=True): 
                                     st.session_state.montadora_selecionada = m
+                                    st.session_state.escolha_modelo = ""
                                     st.rerun()
     else:
         col_logo, col_nome = st.columns([1, 8])
@@ -343,11 +357,16 @@ def render_eeprom():
                         st.error("❌ Montadora já cadastrada!")
                     else:
                         conn = get_db_connection()
-                        cursor = conn.cursor()
-                        cursor.execute("INSERT INTO montadoras (nome) VALUES (?)", (m_hig,))
-                        conn.commit()
-                        os.makedirs(os.path.join(BASE_DIR, m_hig), exist_ok=True)
-                        st.success("✅ Salva no cofre!"); st.rerun()
+                        try:
+                            cursor = conn.cursor()
+                            cursor.execute("INSERT INTO montadoras (nome) VALUES (?)", (m_hig,))
+                            conn.commit()
+                            os.makedirs(os.path.join(BASE_DIR, m_hig), exist_ok=True)
+                            st.success("✅ Salva no cofre!"); st.rerun()
+                        except Exception as e:
+                            st.error(f"Erro ao salvar: {e}")
+                        finally:
+                            conn.close()
         with cad_tab2:
             if not montadoras_existentes: 
                 st.info("Cadastre ao menos uma montadora primeiro.")
@@ -382,15 +401,20 @@ def render_eeprom():
                     n_m_hig = higienizar_nome(novo_nome_m)
                     if n_m_hig and (n_m_hig == m_select_edit or n_m_hig not in montadoras_existentes):
                         conn = get_db_connection()
-                        cursor = conn.cursor()
-                        cursor.execute("UPDATE montadoras SET nome = ? WHERE nome = ?", (n_m_hig, m_select_edit))
-                        cursor.execute("UPDATE veiculos SET montadora_nome = ? WHERE montadora_nome = ?", (n_m_hig, m_select_edit))
-                        conn.commit()
-                        try: 
-                            os.rename(os.path.join(BASE_DIR, m_select_edit), os.path.join(BASE_DIR, n_m_hig))
-                        except Exception: pass
-                        backup_local_para_nuvem_async()
-                        st.success("✅ Atualizado!"); st.session_state.montadora_selecionada = ""; st.rerun()
+                        try:
+                            cursor = conn.cursor()
+                            cursor.execute("UPDATE montadoras SET nome = ? WHERE nome = ?", (n_m_hig, m_select_edit))
+                            cursor.execute("UPDATE veiculos SET montadora_nome = ? WHERE montadora_nome = ?", (n_m_hig, m_select_edit))
+                            conn.commit()
+                            try: 
+                                os.rename(os.path.join(BASE_DIR, m_select_edit), os.path.join(BASE_DIR, n_m_hig))
+                            except Exception: pass
+                            backup_local_para_nuvem_async()
+                            st.success("✅ Atualizado!"); st.session_state.montadora_selecionada = ""; st.rerun()
+                        except Exception as e:
+                            st.error(f"Erro ao atualizar: {e}")
+                        finally:
+                            conn.close()
                 if m_ed_col2.button("🗑️ Excluir Montadora"): 
                     excluir_montadora_db(m_select_edit); st.session_state.montadora_selecionada = ""; st.rerun()
         with ger_tab2:
@@ -417,9 +441,12 @@ def render_eeprom():
                                     try: shutil.rmtree(os.path.join(BASE_DIR, m_sel_v, v_sel_edit))
                                     except Exception: pass
                                     conn = get_db_connection()
-                                    cursor = conn.cursor()
-                                    cursor.execute("UPDATE veiculos SET modelo = ? WHERE id = ?", (n_v_hig, dados_v["id"]))
-                                    conn.commit()
+                                    try:
+                                        cursor = conn.cursor()
+                                        cursor.execute("UPDATE veiculos SET modelo = ? WHERE id = ?", (n_v_hig, dados_v["id"]))
+                                        conn.commit()
+                                    except Exception: pass
+                                    finally: conn.close()
                                 salvar_novo_veiculo_hibrido(m_sel_v, n_v_hig, v_novo_ini, v_novo_int, v_novo_det, dados_v["valores_invertidos"], dados_v["escala"], v_novas_fotos)
                                 st.success("✅ Alterações salvas!"); st.rerun()
                         if v_manage_col2.button("🗑️ Excluir Veículo"): 
