@@ -13,7 +13,6 @@ import io
 from core.db import get_db_connection
 from services.hf_sync import backup_local_para_nuvem_async
 
-# Força o BASE_DIR a ser a raiz real do projeto, não a pasta views
 BASE_DIR = os.path.abspath(os.path.dirname(os.path.dirname(__file__)))
 LOGOS_DIR = os.path.join(BASE_DIR, "Logos")
 
@@ -32,8 +31,10 @@ def buscar_logo_montadora_automatica(montadora):
         mont_alvo = limpar_para_comparacao(montadora)
         for arquivo in arquivos:
             if not arquivo.lower().endswith(('.png', '.jpg', '.jpeg', '.webp', '.gif')): continue
-            nome_arq = limpar_para_comparacao(os.path.splitext(arquivo)[0])
-            if mont_alvo == nome_arq: return os.path.join(LOGOS_DIR, arquivo)
+            # Remove o padrão 'LOGO' do nome do arquivo para cruzar perfeitamente
+            nome_arq = limpar_para_comparacao(os.path.splitext(arquivo)[0]).replace("LOGO", "")
+            if mont_alvo == nome_arq or mont_alvo in nome_arq or nome_arq in mont_alvo: 
+                return os.path.join(LOGOS_DIR, arquivo)
     return None
 
 def renderizar_logo_harmonizada(caminho, montadora_nome=""):
@@ -56,6 +57,7 @@ def listar_montadoras():
         cursor.execute("SELECT nome FROM montadoras")
         return sorted(list(set([higienizar_nome(r[0]) for r in cursor.fetchall()])))
     except Exception: return []
+    finally: conn.close()
 
 def listar_modelos(montadora):
     if not montadora: return []
@@ -65,6 +67,7 @@ def listar_modelos(montadora):
         cursor.execute("SELECT modelo FROM veiculos WHERE montadora_nome = ?", (higienizar_nome(montadora),))
         return sorted(list(set([higienizar_nome(r[0]) for r in cursor.fetchall()])))
     except Exception: return []
+    finally: conn.close()
 
 def buscar_dados_veiculo_unificado(montadora, modelo):
     result = None
@@ -77,6 +80,7 @@ def buscar_dados_veiculo_unificado(montadora, modelo):
             cursor.execute("SELECT foto FROM graficos WHERE veiculo_id = ? ORDER BY ordem", (row[0],))
             result = {"id": row[0], "posicao_inicio": row[1], "intervalo": row[2], "valores_invertidos": row[3], "escala": row[4], "detalhes": row[5], "graficos": [f[0] for f in cursor.fetchall()]}
     except Exception: pass
+    finally: conn.close()
     return result
 
 def salvar_novo_veiculo_hibrido(montadora, modelo, inicio, intervalo, info_extra, valores_invertidos, escala, imagens_upload=None):
@@ -106,6 +110,7 @@ def salvar_novo_veiculo_hibrido(montadora, modelo, inicio, intervalo, info_extra
     except Exception as e:
         st.error(f"Erro ao salvar veículo: {e}")
         return False
+    finally: conn.close()
 
 def excluir_veiculo_db(montadora, modelo):
     conn = get_db_connection()
@@ -117,6 +122,7 @@ def excluir_veiculo_db(montadora, modelo):
         if os.path.exists(pasta): shutil.rmtree(pasta)
         backup_local_para_nuvem_async()
     except Exception: pass
+    finally: conn.close()
 
 def excluir_montadora_db(montadora):
     conn = get_db_connection()
@@ -128,6 +134,7 @@ def excluir_montadora_db(montadora):
         if os.path.exists(os.path.join(BASE_DIR, mont)): shutil.rmtree(os.path.join(BASE_DIR, mont))
         backup_local_para_nuvem_async()
     except Exception: pass
+    finally: conn.close()
 
 def render_eeprom():
     if 'montadora_selecionada' not in st.session_state: st.session_state.montadora_selecionada = ""
@@ -316,6 +323,12 @@ def render_eeprom():
                                     except Exception: st.error("Falha ao abrir imagem.")
                                     if st.button(f"🔍 AMPLIAR MAPA {idx+2}", key=f"btn_zoom_{idx+1}", use_container_width=True):
                                         abrir_modal_zoom(lista_fotos[idx+1], f"Mapa {idx+2} | {st.session_state.montadora_selecionada} {escolha_modelo}")
+
+            st.markdown("---")
+            if st.button("⬅️ Mudar de Montadora (Voltar)", type="secondary", use_container_width=True): 
+                st.session_state.montadora_selecionada = ""
+                st.session_state.escolha_modelo = ""
+                st.rerun()
 
     with st.expander("➕ CADASTRAR: Adicionar Estruturas Independentes"):
         cad_tab1, cad_tab2 = st.tabs(["🏭 Cadastrar Montadora", "🚗 Cadastrar Veículo"])

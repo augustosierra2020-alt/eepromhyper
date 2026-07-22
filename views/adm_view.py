@@ -8,7 +8,7 @@ from core.db import get_db_connection
 from services.hf_sync import backup_local_para_nuvem_async
 
 HF_TOKEN = os.environ.get("HF_TOKEN")
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+BASE_DIR = os.path.abspath(os.path.dirname(os.path.dirname(__file__)))
 LOGOS_DIR = os.path.join(BASE_DIR, "Logos")
 
 def higienizar_nome(nome: str) -> str:
@@ -31,7 +31,7 @@ def renderizar_logo_harmonizada(caminho):
             </div>
         """, unsafe_allow_html=True)
         return True
-    except: return False
+    except Exception: return False
 
 def render_adm():
     st.title("🔑 Central de Administração - HyperTork")
@@ -44,7 +44,6 @@ def render_adm():
         
     st.markdown("---")
     
-    # 3 Abas completas: Infraestrutura (Novidade), Gestão de Logos (Recuperado) e Relatórios
     tab_infra, tab_logos, tab_dados = st.tabs([
         "🖥️ Infraestrutura & Pente Fino", 
         "🖼️ Gestão de Logos & Identidades", 
@@ -62,7 +61,6 @@ def render_adm():
             with st.spinner("Chip está inspecionando as linhas de código e conexões de bancada..."):
                 time.sleep(1)
                 
-                # 1. Teste de Banco de Dados
                 status_db = "🟢 Conectado (Pool SQLite Ativo)"
                 qtd_montadoras, qtd_obd2, qtd_hex = 0, 0, 0
                 try:
@@ -75,18 +73,16 @@ def render_adm():
                     try:
                         cursor.execute("SELECT COUNT(*) FROM hex_history")
                         qtd_hex = cursor.fetchone()[0]
-                    except: status_db = "🟡 Conectado (Tabela hex_history antiga)"
+                    except Exception: status_db = "🟡 Conectado (Tabela hex_history antiga)"
                 except Exception as e:
                     status_db = f"🔴 Falha Crítica na Conexão: {e}"
                 
-                # 2. Teste da Aceleração C++
                 try:
                     import hypertork_cpp
                     status_cpp = "🟢 Ativa (hypertork_cpp carregado com sucesso)"
                 except ImportError:
                     status_cpp = "🟡 Inativa (Fallback Python Ativo - Ambiente Linux contido)"
                 
-                # 3. Teste do Token da IA
                 status_ia = "🟢 Configurada (HF_TOKEN injetado nos Secrets)" if HF_TOKEN else "🔴 Offline (Variável HF_TOKEN ausente no ambiente)"
                 
                 st.markdown("### 📊 Status da Bancada")
@@ -121,13 +117,12 @@ def render_adm():
                 st.success("🏁 Pente fino concluído. Core operacional estruturado!")
 
     # ==========================================
-    # ABA 2: GESTÃO DE LOGOS (RECURSO RESTAURADO)
+    # ABA 2: GESTÃO DE LOGOS
     # ==========================================
     with tab_logos:
         st.subheader("🖼️ Repositório Físico de Logos de Montadoras")
         st.write("Gerencie os arquivos visuais que aparecem nos cards do Painel EEPROM.")
         
-        # Formulário de upload de nova logo
         with st.container(border=True):
             st.markdown("#### ➕ Fazer Upload de Nova Logo")
             nome_logo_input = st.text_input("Nome da Montadora Correspondente:", placeholder="Ex: VOLKSWAGEN")
@@ -152,7 +147,6 @@ def render_adm():
                 else:
                     st.warning("Por favor, preencha o nome da montadora e selecione uma imagem.")
         
-        # Galeria de logos existentes para visualização e exclusão
         st.markdown("#### 📁 Logos Ativas no Sistema")
         if not os.path.exists(LOGOS_DIR) or not os.listdir(LOGOS_DIR):
             st.info("Nenhuma imagem de logo encontrada no diretório local.")
@@ -192,5 +186,5 @@ def render_adm():
             cursor.execute("SELECT COUNT(*) FROM veiculos")
             qtd_v = cursor.fetchone()[0]
             st.metric("Total de Veículos/Mapas Cadastrados", f"{qtd_v} modelos")
-        except:
+        except Exception:
             st.info("Carregando volumes armazenados...")
