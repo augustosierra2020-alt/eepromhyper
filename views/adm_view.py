@@ -50,9 +50,6 @@ def render_adm():
         "📊 Estatísticas Globais"
     ])
     
-    # ==========================================
-    # ABA 1: INFRAESTRUTURA & PENTE FINO
-    # ==========================================
     with tab_infra:
         st.subheader("📋 Diagnóstico e Pente Fino de Infraestrutura")
         st.write("Clique no botão abaixo para o Chip avaliar a saúde das conexões, módulos compilados e integridade das rotas do sistema.")
@@ -116,9 +113,6 @@ def render_adm():
                 st.warning(analise_chip)
                 st.success("🏁 Pente fino concluído. Core operacional estruturado!")
 
-    # ==========================================
-    # ABA 2: GESTÃO DE LOGOS
-    # ==========================================
     with tab_logos:
         st.subheader("🖼️ Repositório Físico de Logos de Montadoras")
         st.write("Gerencie os arquivos visuais que aparecem nos cards do Painel EEPROM.")
@@ -175,9 +169,6 @@ def render_adm():
                                     except Exception as e:
                                         st.error(f"Erro ao apagar: {e}")
 
-    # ==========================================
-    # ABA 3: ESTATÍSTICAS E VOLUMES
-    # ==========================================
     with tab_dados:
         st.subheader("📈 Volumes em Nuvem e Registros Físicos")
         try:

@@ -1,19 +1,19 @@
 import os
 import base64
 import streamlit as st
+from core.db import get_db_connection
 
-# Garante o mapeamento direto na raiz absoluta, ignorando a subpasta views
+# Garante o mapeamento direto na raiz absoluta
 BASE_DIR = os.path.abspath(os.path.dirname(os.path.dirname(__file__)))
 CAMINHO_LOGO_PRINCIPAL = os.path.join(BASE_DIR, "Logos", "logo.png")
 
 def render_home():
-    # Renderização Centralizada da Logo Principal
     if os.path.exists(CAMINHO_LOGO_PRINCIPAL):
         try:
             with open(CAMINHO_LOGO_PRINCIPAL, "rb") as image_file:
                 encoded_string = base64.b64encode(image_file.read()).decode()
             st.markdown(
-                f'<div style="text-align: center; margin-bottom: 30px;">'
+                f'<div style="text-align: center; margin-bottom: 25px;">'
                 f'<img src="data:image/png;base64,{encoded_string}" class="locked-main-logo">'
                 f'</div>', 
                 unsafe_allow_html=True
@@ -23,9 +23,27 @@ def render_home():
     else:
         st.markdown("<h1 style='text-align: center; color: white;'>🚀 HyperTork Hub</h1>", unsafe_allow_html=True)
 
-    st.markdown("<h2 style='text-align: center; color: #1E88E5; margin-bottom: 40px; font-weight: 700; letter-spacing: 0.5px;'>PAINEL DE CONTROLE OPERACIONAL</h2>", unsafe_allow_html=True)
+    st.markdown("<h2 style='text-align: center; color: #1E88E5; margin-bottom: 20px; font-weight: 700; letter-spacing: 0.5px;'>PAINEL DE CONTROLE OPERACIONAL</h2>", unsafe_allow_html=True)
 
-    # Grid de Alta Performance utilizando as classes injetadas do app_eeprom.py
+    # --- DASHBOARD RESTAURADO ---
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT COUNT(*) FROM montadoras")
+        total_m = cursor.fetchone()[0]
+        cursor.execute("SELECT COUNT(*) FROM veiculos")
+        total_v = cursor.fetchone()[0]
+        
+        st.markdown("### 📊 Dashboard: Visão Geral do Sistema")
+        m1, m2, m3 = st.columns(3)
+        m1.metric("Montadoras no Cofre", total_m)
+        m2.metric("Mapas de Veículos Ativos", total_v)
+        m3.metric("Status Operacional", "Online 🟢")
+        st.markdown("---")
+    except Exception:
+        pass
+
+    # --- GRID DE BOTÕES ---
     col1, col2, col3, col4 = st.columns(4)
     
     with col1:

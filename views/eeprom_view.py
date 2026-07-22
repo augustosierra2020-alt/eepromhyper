@@ -59,8 +59,6 @@ def listar_montadoras():
         return sorted(list(set([higienizar_nome(r[0]) for r in rows if r[0]])))
     except Exception:
         return []
-    finally:
-        conn.close()
 
 def listar_modelos(montadora):
     if not montadora: return []
@@ -72,8 +70,6 @@ def listar_modelos(montadora):
         return sorted(list(set([higienizar_nome(r[0]) for r in rows if r[0]])))
     except Exception:
         return []
-    finally:
-        conn.close()
 
 def buscar_dados_veiculo_unificado(montadora, modelo):
     result = None
@@ -87,8 +83,6 @@ def buscar_dados_veiculo_unificado(montadora, modelo):
             result = {"id": row[0], "posicao_inicio": row[1], "intervalo": row[2], "valores_invertidos": row[3], "escala": row[4], "detalhes": row[5], "graficos": [f[0] for f in cursor.fetchall()]}
     except Exception: 
         pass
-    finally:
-        conn.close()
     return result
 
 def salvar_novo_veiculo_hibrido(montadora, modelo, inicio, intervalo, info_extra, valores_invertidos, escala, imagens_upload=None):
@@ -118,8 +112,6 @@ def salvar_novo_veiculo_hibrido(montadora, modelo, inicio, intervalo, info_extra
     except Exception as e:
         st.error(f"Erro ao salvar veículo: {e}")
         return False
-    finally:
-        conn.close()
 
 def excluir_veiculo_db(montadora, modelo):
     conn = get_db_connection()
@@ -132,8 +124,6 @@ def excluir_veiculo_db(montadora, modelo):
         backup_local_para_nuvem_async()
     except Exception: 
         pass
-    finally:
-        conn.close()
 
 def excluir_montadora_db(montadora):
     conn = get_db_connection()
@@ -146,8 +136,6 @@ def excluir_montadora_db(montadora):
         backup_local_para_nuvem_async()
     except Exception: 
         pass
-    finally:
-        conn.close()
 
 def render_eeprom():
     if 'montadora_selecionada' not in st.session_state: st.session_state.montadora_selecionada = ""
@@ -365,8 +353,6 @@ def render_eeprom():
                             st.success("✅ Salva no cofre!"); st.rerun()
                         except Exception as e:
                             st.error(f"Erro ao salvar: {e}")
-                        finally:
-                            conn.close()
         with cad_tab2:
             if not montadoras_existentes: 
                 st.info("Cadastre ao menos uma montadora primeiro.")
@@ -413,8 +399,6 @@ def render_eeprom():
                             st.success("✅ Atualizado!"); st.session_state.montadora_selecionada = ""; st.rerun()
                         except Exception as e:
                             st.error(f"Erro ao atualizar: {e}")
-                        finally:
-                            conn.close()
                 if m_ed_col2.button("🗑️ Excluir Montadora"): 
                     excluir_montadora_db(m_select_edit); st.session_state.montadora_selecionada = ""; st.rerun()
         with ger_tab2:
@@ -446,7 +430,6 @@ def render_eeprom():
                                         cursor.execute("UPDATE veiculos SET modelo = ? WHERE id = ?", (n_v_hig, dados_v["id"]))
                                         conn.commit()
                                     except Exception: pass
-                                    finally: conn.close()
                                 salvar_novo_veiculo_hibrido(m_sel_v, n_v_hig, v_novo_ini, v_novo_int, v_novo_det, dados_v["valores_invertidos"], dados_v["escala"], v_novas_fotos)
                                 st.success("✅ Alterações salvas!"); st.rerun()
                         if v_manage_col2.button("🗑️ Excluir Veículo"): 
