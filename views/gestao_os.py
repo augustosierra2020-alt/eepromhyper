@@ -1,13 +1,18 @@
 import streamlit as st
 import pandas as pd
 import io
+import os
 import re
+import time
 from datetime import datetime
 from core.db import get_db_connection
 from services.hf_sync import backup_local_para_nuvem_async
 from docx import Document
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.shared import Pt, RGBColor
+
+BASE_DIR = os.path.abspath(os.path.dirname(os.path.dirname(__file__)))
+DIR_CLIENTES = os.path.join(BASE_DIR, "Clientes")
 
 # ==========================================
 # REGRAS ORIGINAIS DE ENGENHARIA AUTOMOTIVA
@@ -82,17 +87,28 @@ def modificar_modelo_docx(modelo_bytes, flash_point, cliente_nome, city, contato
 # RENDERIZAÇÃO INTERFACE GESTÃO E OS
 # ==========================================
 def render_gestao_os():
+    st.title("📊 Gestão Estrutural & Ordens de Serviço (OS)")
+    
     # Inicializadores de Estado Protegidos para evitar perdas de clique
     if "df_filtrado" not in st.session_state: st.session_state.df_filtrado = None
     if "os_mes_selecionado" not in st.session_state: st.session_state.os_mes_selecionado = ""
     if "os_cliente_selecionado" not in st.session_state: st.session_state.os_cliente_selecionado = ""
 
-    aba1, aba2, aba3, aba4 = st.tabs(["📋 Processamento da Planilha", "📄 Gerar Ordem de Serviço", "🗂️ Central de Clientes & Pastas Digitais", "📊 Painel de Monitoramento Mensal"])
+    # Usando 5 abas principais para evitar o erro de abas aninhadas no Streamlit
+    aba1, aba2, aba3_mensal, aba3_geral, aba4 = st.tabs([
+        "📋 Processamento", 
+        "📄 Gerar OS", 
+        "📅 Histórico Mensal", 
+        "🗂️ Clientes Globais", 
+        "📊 Painel"
+    ])
     
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    # ABA 1: PROCESSAMENTO E EXTRAÇÃO AUTOMATIZADA (AGORA EM LOTE)
+    # ====================================================
+    # ABA 1: PROCESSAMENTO E EXTRAÇÃO AUTOMATIZADA
+    # ====================================================
     with aba1:
         st.subheader("Processamento Inteligente (Suporte a Múltiplos Arquivos)")
         arquivos_carregados = st.file_uploader("Arraste uma ou mais planilhas de faturamento:", type=["xlsx", "xls", "csv"], accept_multiple_files=True)
@@ -128,7 +144,7 @@ def render_gestao_os():
                         st.markdown("### 📅 Arquivamento Definitivo no Banco de Dados Mestre")
                         col_sm1, col_sm2 = st.columns(2)
                         mes_nome_in = col_sm1.selectbox("Informe o Mês:", ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"], index=datetime.now().month-1)
-                        ano_nome_in = col_sm2.number_input("Informe o Ano:", value=2026, step=1)
+                        ano_nome_in = col_sm2.number_input("Informe o Ano:", value=datetime.now().year, step=1)
                         pasta_mes_designada = f"{mes_nome_in} - {ano_nome_in}"
                         
                         if st.button("💾 Gravar e Blindar Planilha no Cofre", use_container_width=True, type="primary"):
@@ -145,7 +161,9 @@ def render_gestao_os():
             except Exception as e: 
                 st.error(f"Erro no processamento da planilha: {e}")
 
+    # ====================================================
     # ABA 2: EMISSOR DE OS INDIVIDUAL/LOTE VIA DOCX
+    # ====================================================
     with aba2:
         st.subheader("📄 Emissor de Ordem de Serviço")
         modelo_word = st.file_uploader("Selecione o arquivo de Template .docx:", type=["docx"])
@@ -182,7 +200,7 @@ def render_gestao_os():
                 st.markdown("### 💾 Opção: Salvar e Destinar à Pasta Compartilhada do Cliente")
                 col_c1, col_c2 = st.columns(2)
                 m_os = col_c1.selectbox("Mês de Competência:", ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"], index=datetime.now().month-1, key="os_mes_comp")
-                a_os = col_c2.number_input("Ano Alvo:", value=2026, step=1, key="os_ano_comp")
+                a_os = col_c2.number_input("Ano Alvo:", value=datetime.now().year, step=1, key="os_ano_comp")
                 periodo_chave_os = f"{m_os} - {a_os}"
                 
                 if st.button("💾 Armazenar Permanentemente na Pasta Virtual do Cliente", type="primary", use_container_width=True):
@@ -193,8 +211,10 @@ def render_gestao_os():
                     backup_local_para_nuvem_async()
                     st.success(f"✅ OS blindada na biblioteca de arquivos digitais do parceiro {fp_sel}!")
 
-    # ABA 3: PASTAS DIGITAIS DOS CLIENTES (ORGANIZAÇÃO INDIVIDUAL)
-    with aba3:
+    # ====================================================
+    # ABA 3: PASTAS DIGITAIS DOS CLIENTES (VISÃO MENSAL)
+    # ====================================================
+    with aba3_mensal:
         cursor.execute("SELECT DISTINCT mes_ano FROM planilhas_mensais")
         p1 = [r[0] for r in cursor.fetchall()]
         cursor.execute("SELECT DISTINCT mes_ano FROM os_salvas")
@@ -202,7 +222,7 @@ def render_gestao_os():
         lista_meses_arquivados = sorted(list(set(p1 + p2)))
 
         if st.session_state.os_mes_selecionado == "":
-            st.subheader("📅 Central de Clientes e Pastas Digitais")
+            st.subheader("📅 Central Histórica: Pastas por Mês")
             st.markdown("### Selecione o Período Mensal para gerenciar as pastas dos parceiros:")
             if not lista_meses_arquivados: st.info("Nenhuma pasta ou faturamento arquivado até o momento.")
             else:
@@ -281,7 +301,7 @@ def render_gestao_os():
                 up_manual = st.file_uploader("Arraste ordens assinadas ou laudos mecânicos:", key="up_manual_shared")
                 col_m1, col_m2 = st.columns(2)
                 mes_m = col_m1.selectbox("Mês Alvo:", ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"], key="m_manual")
-                ano_m = col_m2.number_input("Ano Alvo:", value=2026, step=1, key="a_manual")
+                ano_m = col_m2.number_input("Ano Alvo:", value=datetime.now().year, step=1, key="a_manual")
                 val_m = st.number_input("Valor do Serviço Anexo (R$):", value=0.0, step=50.0)
                 
                 if st.button("💾 Inserir na Biblioteca Coletiva", use_container_width=True, type="primary"):
@@ -291,7 +311,62 @@ def render_gestao_os():
                         backup_local_para_nuvem_async()
                         st.success("Documento injetado e sincronizado com a nuvem!"); st.rerun()
 
-    # ABA 4: MONITORAMENTO FINANCEIRO E AUDITORIA MENSAL
+    # ====================================================
+    # ABA 4: VISÃO GLOBAL COMPARTILHADA (NOVA CENTRAL GERAL)
+    # ====================================================
+    with aba3_geral:
+        st.subheader("🗂️ Repositório Global de Clientes Cadastrados")
+        st.caption("Acesso unificado a todas as pastas de clientes registradas no servidor HyperTork, independente do mês de entrada do serviço.")
+        
+        os.makedirs(DIR_CLIENTES, exist_ok=True)
+        
+        with st.expander("➕ Inicializar Pasta Coletiva de Novo Cliente"):
+            nome_novo_cliente = st.text_input("Nome do Cliente (Razão Social ou Nome Completo):", placeholder="Ex: AUTO ELETRICA SERGIO").strip().upper()
+            if st.button("Criar Pasta Global", type="primary"):
+                if nome_novo_cliente:
+                    pasta_especifica = os.path.join(DIR_CLIENTES, nome_novo_cliente)
+                    if not os.path.exists(pasta_especifica):
+                        os.makedirs(pasta_especifica, exist_ok=True)
+                        st.success(f"📁 Pasta compartilhada de arquivos criada com sucesso para: {nome_novo_cliente}")
+                        backup_local_para_nuvem_async()
+                        st.rerun()
+                    else:
+                        st.error("❌ Cliente já possui pasta ativa no repositório global.")
+                else:
+                    st.warning("Preencha o nome do cliente.")
+        
+        st.markdown("##### 📁 Pastas de Clientes em Servidor")
+        pastas_gerais = [d for d in os.listdir(DIR_CLIENTES) if os.path.isdir(os.path.join(DIR_CLIENTES, d))]
+        
+        if not pastas_gerais:
+            st.info("Nenhuma pasta global de cliente gerada até o momento. Utilize o painel acima para registrar.")
+        else:
+            for cliente_pasta in sorted(pastas_gerais):
+                caminho_cli = os.path.join(DIR_CLIENTES, cliente_pasta)
+                with st.expander(f"👤 CLIENTE: {cliente_pasta}"):
+                    st.markdown(f"**Caminho Físico:** `Root/Clientes/{cliente_pasta}`")
+                    
+                    arquivo_upload_cli = st.file_uploader(f"Anexar Arquivo Permanente (HEX, Imagens, PDFs) para {cliente_pasta}:", key=f"up_file_{cliente_pasta}")
+                    if st.button(f"Salvar Arquivo em {cliente_pasta}", key=f"btn_save_file_{cliente_pasta}"):
+                        if arquivo_upload_cli:
+                            with open(os.path.join(caminho_cli, arquivo_upload_cli.name), "wb") as f_cli:
+                                f_cli.write(arquivo_upload_cli.read())
+                            st.success(f"✅ Arquivo '{arquivo_upload_cli.name}' armazenado na pasta global do cliente!")
+                            backup_local_para_nuvem_async()
+                            time.sleep(0.3)
+                            st.rerun()
+                    
+                    arquivos_do_cliente = os.listdir(caminho_cli)
+                    if arquivos_do_cliente:
+                        st.markdown("**Arquivos em Nuvem:**")
+                        for arq in arquivos_do_cliente:
+                            st.text(f"📄 {arq}")
+                    else:
+                        st.caption("Nenhum arquivo anexado a este cliente.")
+
+    # ====================================================
+    # ABA 5: MONITORAMENTO FINANCEIRO E AUDITORIA MENSAL
+    # ====================================================
     with aba4:
         st.subheader("📊 Painel de Monitoramento Mensal (Réplica de Planilhas)")
         cursor.execute("SELECT DISTINCT mes_ano FROM planilhas_mensais")
@@ -329,8 +404,8 @@ def render_gestao_os():
                     except Exception as err:
                         st.error(f"Erro ao reestruturar planilha extraída: {err}")
 
-                    if st.button("🗑️ Destruir Registro Mensal Deste Período (Ação Irreversível)", use_container_width=True):
-                        cursor.execute("DELETE FROM planilhas_mensais WHERE mes_ano = ?", (mes_escolhido,))
-                        conn.commit()
-                        backup_local_para_nuvem_async()
-                        st.warning("Faturamento apagado definitivamente da nuvem."); st.rerun()
+                if st.button("🗑️ Destruir Registro Mensal Deste Período (Ação Irreversível)", use_container_width=True):
+                    cursor.execute("DELETE FROM planilhas_mensais WHERE mes_ano = ?", (mes_escolhido,))
+                    conn.commit()
+                    backup_local_para_nuvem_async()
+                    st.warning("Faturamento apagado definitivamente da nuvem."); st.rerun()
