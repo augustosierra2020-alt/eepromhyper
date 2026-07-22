@@ -31,11 +31,12 @@ def renderizar_logo_harmonizada(caminho):
             </div>
         """, unsafe_allow_html=True)
         return True
-    except Exception: return False
+    except Exception: 
+        return False
 
 def render_adm():
     st.title("🔑 Central de Administração - HyperTork")
-    st.info("Painel operacional mestre operando em arquitetura modular blindada.")
+    st.info("Painel mestre de infraestrutura rodando em pool persistente de dados.")
     
     if st.button("🚪 Encerrar Sessão Administrador", type="primary", use_container_width=True):
         st.session_state.adm_logged_in = False
@@ -46,16 +47,19 @@ def render_adm():
     
     tab_infra, tab_logos, tab_dados = st.tabs([
         "🖥️ Infraestrutura & Pente Fino", 
-        "🖼️ Gestão de Logos & Identidades", 
+        "🖼️ Repositório Físico de Logos", 
         "📊 Estatísticas Globais"
     ])
     
+    # ==========================================
+    # ABA 1: INFRAESTRUTURA & PENTE FINO
+    # ==========================================
     with tab_infra:
-        st.subheader("📋 Diagnóstico e Pente Fino de Infraestrutura")
-        st.write("Clique no botão abaixo para o Chip avaliar a saúde das conexões, módulos compilados e integridade das rotas do sistema.")
+        st.subheader("📋 Diagnóstico Técnico de Infraestrutura")
+        st.write("Clique abaixo para invocar a auditoria interna do Chip no núcleo do sistema.")
         
         if st.button("🔍 Rodar Pente Fino no Sistema (Status & Erros)", type="primary", use_container_width=True):
-            with st.spinner("Chip está inspecionando as linhas de código e conexões de bancada..."):
+            with st.spinner("Chip inspecionando portas lógicas e tabelas dinâmicas..."):
                 time.sleep(1)
                 
                 status_db = "🟢 Conectado (Pool SQLite Ativo)"
@@ -70,7 +74,8 @@ def render_adm():
                     try:
                         cursor.execute("SELECT COUNT(*) FROM hex_history")
                         qtd_hex = cursor.fetchone()[0]
-                    except Exception: status_db = "🟡 Conectado (Tabela hex_history antiga)"
+                    except Exception: 
+                        status_db = "🟡 Conectado (Tabela hex_history antiga)"
                 except Exception as e:
                     status_db = f"🔴 Falha Crítica na Conexão: {e}"
                 
@@ -78,7 +83,7 @@ def render_adm():
                     import hypertork_cpp
                     status_cpp = "🟢 Ativa (hypertork_cpp carregado com sucesso)"
                 except ImportError:
-                    status_cpp = "🟡 Inativa (Fallback Python Ativo - Ambiente Linux contido)"
+                    status_cpp = "🟡 Inativa (Contêiner Linux operando em Fallback NumPy sem perdas)"
                 
                 status_ia = "🟢 Configurada (HF_TOKEN injetado nos Secrets)" if HF_TOKEN else "🔴 Offline (Variável HF_TOKEN ausente no ambiente)"
                 
@@ -96,9 +101,9 @@ def render_adm():
                 
                 analise_chip = ""
                 if not HF_TOKEN:
-                    analise_chip += "- ❌ **ERRO CRÍTICO DE IA:** Chefe, o scanner OBD2 não vai conseguir gerar laudos porque a chave secreta `HF_TOKEN` está vazia! Vá nas configurações do Space do Hugging Face e cadastre-a.\n"
+                    analise_chip += "- ❌ **ERRO CRÍTICO DE IA:** Chefe, o scanner OBD2 não vai conseguir gerar laudos porque a chave secreta `HF_TOKEN` está vazia! Cadastre o token nos Secrets do Hugging Face.\n"
                 else:
-                    analise_chip += "- ✅ **IA HUGGING FACE:** Autenticação ativa. Pronta para gerar laudos DTC.\n"
+                    analise_chip += "- ✅ **IA HUGGING FACE:** Autenticação ativa. Pronta para laudos DTC.\n"
                     
                 if "Inativa" in status_cpp:
                     analise_chip += "- ⚠️ **AVISO DE ACC C++:** O contêiner Linux do Hugging Face aplicou o fallback em matrizes NumPy. O estúdio HEX vai rodar perfeito, mas usando o interpretador nativo do Python.\n"
@@ -113,69 +118,74 @@ def render_adm():
                 st.warning(analise_chip)
                 st.success("🏁 Pente fino concluído. Core operacional estruturado!")
 
+    # ==========================================
+    # ABA 2: REPOSITÓRIO FÍSICO DE LOGOS (Upload em Lote / Espera Automática)
+    # ==========================================
     with tab_logos:
-        st.subheader("🖼️ Repositório Físico de Logos de Montadoras")
-        st.write("Gerencie os arquivos visuais que aparecem nos cards do Painel EEPROM.")
+        st.subheader("🖼️ Repositório de Logos de Montadoras (Upload em Lote)")
+        st.write("Selecione uma ou várias fotos de logos simultaneamente. O sistema manterá em espera até que a montadora com nome correspondente seja criada.")
         
         with st.container(border=True):
-            st.markdown("#### ➕ Fazer Upload de Nova Logo")
-            nome_logo_input = st.text_input("Nome da Montadora Correspondente:", placeholder="Ex: VOLKSWAGEN")
-            arquivo_logo = st.file_uploader("Selecione a Imagem (PNG preferencialmente):", type=["png", "jpg", "jpeg", "webp"])
+            arquivos_logos = st.file_uploader("Arraste ou Selecione as Imagens (Múltiplos arquivos permitidos):", type=["png", "jpg", "jpeg", "webp"], accept_multiple_files=True)
             
-            if st.button("💾 Salvar Arquivo no Repositório", type="primary"):
-                if nome_logo_input and arquivo_logo:
+            if st.button("💾 Gravar Mídias no Repositório", type="primary", use_container_width=True):
+                if arquivos_logos:
                     os.makedirs(LOGOS_DIR, exist_ok=True)
-                    nome_limpo = higienizar_nome(nome_logo_input)
-                    extensao = os.path.splitext(arquivo_logo.name)[1].lower()
-                    caminho_final = os.path.join(LOGOS_DIR, f"{nome_limpo}{extensao}")
-                    
-                    try:
-                        with open(caminho_final, "wb") as f:
-                            f.write(arquivo_logo.read())
-                        st.success(f"✅ Imagem salva com sucesso como `{nome_limpo}{extensao}`!")
-                        backup_local_para_nuvem_async()
-                        time.sleep(0.5)
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"Erro ao salvar arquivo físico: {e}")
+                    salvos = 0
+                    for arquivo in arquivos_logos:
+                        caminho_final = os.path.join(LOGOS_DIR, arquivo.name)
+                        try:
+                            with open(caminho_final, "wb") as f:
+                                f.write(arquivo.read())
+                            salvos += 1
+                        except Exception as e:
+                            st.error(f"Erro ao salvar '{arquivo.name}': {e}")
+                            
+                    st.success(f"✅ Sucesso! {salvos} arquivo(s) de imagem foram alocados no diretório físico.")
+                    backup_local_para_nuvem_async()
+                    time.sleep(0.5)
+                    st.rerun()
                 else:
-                    st.warning("Por favor, preencha o nome da montadora e selecione uma imagem.")
+                    st.warning("Selecione ao menos um arquivo de imagem.")
         
-        st.markdown("#### 📁 Logos Ativas no Sistema")
+        st.markdown("#### 📁 Mídias em Custódia Física")
         if not os.path.exists(LOGOS_DIR) or not os.listdir(LOGOS_DIR):
-            st.info("Nenhuma imagem de logo encontrada no diretório local.")
+            st.info("Diretório de logos vazio.")
         else:
-            arquivos_logos = [f for f in os.listdir(LOGOS_DIR) if f.lower().endswith(('.png', '.jpg', '.jpeg', '.webp'))]
+            arquivos_existentes = sorted([f for f in os.listdir(LOGOS_DIR) if f.lower().endswith(('.png', '.jpg', '.jpeg', '.webp'))])
             
-            for idx in range(0, len(arquivos_logos), 4):
+            for idx in range(0, len(arquivos_existentes), 4):
                 cols = st.columns(4)
                 for j in range(4):
-                    if idx + j < len(arquivos_logos):
-                        nome_arquivo = arquivos_logos[idx + j]
-                        caminho_completo = os.path.join(LOGOS_DIR, nome_arquivo)
-                        nome_exibicao = os.path.splitext(nome_arquivo)[0]
+                    if idx + j < len(arquivos_existentes):
+                        nome_arq = arquivos_existentes[idx + j]
+                        caminho_completo = os.path.join(LOGOS_DIR, nome_arq)
                         
                         with cols[j]:
                             with st.container(border=True):
                                 renderizar_logo_harmonizada(caminho_completo)
-                                st.markdown(f"**Identificador:** `{nome_exibicao}`")
-                                if st.button("🗑️ Excluir Logo", key=f"del_logo_{idx+j}", use_container_width=True):
+                                st.markdown(f"<p style='font-size:0.75rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;'><b>Arquivo:</b> {nome_arq}</p>", unsafe_allow_html=True)
+                                if st.button("🗑️ Eliminar", key=f"del_logo_adm_{idx+j}", use_container_width=True):
                                     try:
-                                        os.remove(caminho_completo)
-                                        st.success("Arquivo removido!")
-                                        backup_local_para_nuvem_async()
-                                        time.sleep(0.5)
-                                        st.rerun()
+                                        if os.path.exists(caminho_completo):  # Trava de segurança contra duplo-clique
+                                            os.remove(caminho_completo)
+                                            st.success("Removido")
+                                            backup_local_para_nuvem_async()
+                                            time.sleep(0.5)
+                                            st.rerun()
                                     except Exception as e:
-                                        st.error(f"Erro ao apagar: {e}")
+                                        st.error(f"Erro: {e}")
 
+    # ==========================================
+    # ABA 3: ESTATÍSTICAS E VOLUMES
+    # ==========================================
     with tab_dados:
-        st.subheader("📈 Volumes em Nuvem e Registros Físicos")
+        st.subheader("📈 Volumes Cadastrados na Oficina")
         try:
             conn = get_db_connection()
             cursor = conn.cursor()
             cursor.execute("SELECT COUNT(*) FROM veiculos")
             qtd_v = cursor.fetchone()[0]
-            st.metric("Total de Veículos/Mapas Cadastrados", f"{qtd_v} modelos")
+            st.metric("Total de Veículos/Mapas Mapeados", f"{qtd_v} modelos")
         except Exception:
             st.info("Carregando volumes armazenados...")

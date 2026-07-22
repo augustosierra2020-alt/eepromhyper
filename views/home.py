@@ -1,13 +1,15 @@
 import os
 import base64
 import streamlit as st
-from core.db import get_db_connection
+import pandas as pd
 
-# Garante o mapeamento direto na raiz absoluta
+# Mapeamentos de Caminho
 BASE_DIR = os.path.abspath(os.path.dirname(os.path.dirname(__file__)))
 CAMINHO_LOGO_PRINCIPAL = os.path.join(BASE_DIR, "Logos", "logo.png")
+CAMINHO_PLANILHA_FP = os.path.join(BASE_DIR, "Fp.xlsx")
 
 def render_home():
+    # Renderização da Logo Principal via Base64
     if os.path.exists(CAMINHO_LOGO_PRINCIPAL):
         try:
             with open(CAMINHO_LOGO_PRINCIPAL, "rb") as image_file:
@@ -23,69 +25,91 @@ def render_home():
     else:
         st.markdown("<h1 style='text-align: center; color: white;'>🚀 HyperTork Hub</h1>", unsafe_allow_html=True)
 
-    st.markdown("<h2 style='text-align: center; color: #1E88E5; margin-bottom: 20px; font-weight: 700; letter-spacing: 0.5px;'>PAINEL DE CONTROLE OPERACIONAL</h2>", unsafe_allow_html=True)
+    st.markdown("<h2 style='text-align: center; color: #1E88E5; margin-bottom: 30px; font-weight: 700;'>PAINEL DE CONTROLE OPERACIONAL</h2>", unsafe_allow_html=True)
 
-    # --- DASHBOARD RESTAURADO ---
+    # --- DASHBOARD DE ALTA PERFORMANCE (PLANILHA FP) ---
+    total_clientes = 0
+    status_fp = "Aguardando Sincronização"
     try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute("SELECT COUNT(*) FROM montadoras")
-        total_m = cursor.fetchone()[0]
-        cursor.execute("SELECT COUNT(*) FROM veiculos")
-        total_v = cursor.fetchone()[0]
-        
-        st.markdown("### 📊 Dashboard: Visão Geral do Sistema")
-        m1, m2, m3 = st.columns(3)
-        m1.metric("Montadoras no Cofre", total_m)
-        m2.metric("Mapas de Veículos Ativos", total_v)
-        m3.metric("Status Operacional", "Online 🟢")
-        st.markdown("---")
+        if os.path.exists(CAMINHO_PLANILHA_FP):
+            df_fp = pd.read_excel(CAMINHO_PLANILHA_FP)
+            total_clientes = len(df_fp)
+            status_fp = "Online 🟢"
     except Exception:
-        pass
+        status_fp = "Erro de Leitura 🔴"
+        
+    st.markdown("### 📊 Visão Geral: Base de Clientes (Fp)")
+    m1, m2, m3 = st.columns(3)
+    m1.metric("Total de Clientes Identificados", total_clientes)
+    m2.metric("Status do Arquivo Fp", status_fp)
+    m3.metric("Aceleração de Hardware", "C++ Fallback / NumPy")
+    st.markdown("---")
 
-    # --- GRID DE BOTÕES ---
-    col1, col2, col3, col4 = st.columns(4)
-    
-    with col1:
-        st.markdown("""
-            <div class="big-hub-btn btn-blue">
+    # --- GRID DE NAV PREMIUM (DARK GLASSMORPHISM MONOCROMÁTICO) ---
+    st.markdown("""
+        <style>
+            .hub-grid { 
+                display: grid; 
+                grid-template-columns: repeat(4, 1fr); 
+                gap: 20px; 
+            }
+            .big-hub-btn { 
+                text-decoration: none !important; 
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+                background: linear-gradient(145deg, #1A1A1A 0%, #0D0D0D 100%);
+                border: 1px solid rgba(255, 255, 255, 0.08);
+                border-radius: 12px;
+                padding: 35px 15px;
+                transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+                box-shadow: 0 6px 15px rgba(0,0,0,0.5);
+            }
+            .big-hub-btn:hover {
+                transform: translateY(-5px);
+                border-color: #1E88E5;
+                box-shadow: 0 10px 25px rgba(30, 136, 229, 0.2);
+                background: linear-gradient(145deg, #222222 0%, #111111 100%);
+            }
+            .big-hub-btn .emoji-icon { 
+                font-size: 2.6rem; 
+                margin-bottom: 15px;
+                filter: grayscale(10%) drop-shadow(0px 3px 5px rgba(0,0,0,0.7));
+                transition: transform 0.3s ease;
+            }
+            .big-hub-btn:hover .emoji-icon {
+                transform: scale(1.12);
+            }
+            .big-hub-btn h2 { 
+                color: #C0C0C0 !important; 
+                font-size: 1.05rem !important; 
+                font-weight: 600 !important; 
+                margin: 0;
+                text-transform: uppercase;
+                letter-spacing: 1.5px;
+                transition: color 0.3s ease;
+            }
+            .big-hub-btn:hover h2 {
+                color: #FFFFFF !important;
+            }
+        </style>
+        <div class="hub-grid">
+            <a href="?page=HEX_COMPARE" class="big-hub-btn" target="_self">
                 <div class="emoji-icon">🛠️</div>
                 <h2>HEX Studio</h2>
-            </div>
-        """, unsafe_allow_html=True)
-        if st.button("Acessar Estúdio HEX", key="btn_nav_hex", use_container_width=True, type="secondary"):
-            st.session_state.app_mode = "HEX_COMPARE"
-            st.rerun()
-                
-    with col2:
-        st.markdown("""
-            <div class="big-hub-btn btn-purple">
+            </a>
+            <a href="?page=EEPROM" class="big-hub-btn" target="_self">
                 <div class="emoji-icon">⚙️</div>
                 <h2>EEPROM Maps</h2>
-            </div>
-        """, unsafe_allow_html=True)
-        if st.button("Acessar Bancada EEPROM", key="btn_nav_eeprom", use_container_width=True, type="secondary"):
-            st.session_state.app_mode = "EEPROM"
-            st.rerun()
-
-    with col3:
-        st.markdown("""
-            <div class="big-hub-btn btn-green">
+            </a>
+            <a href="?page=GESTAO_OS" class="big-hub-btn" target="_self">
                 <div class="emoji-icon">📊</div>
                 <h2>Gestão & OS</h2>
-            </div>
-        """, unsafe_allow_html=True)
-        if st.button("Acessar Gestão Operacional", key="btn_nav_gestao", use_container_width=True, type="secondary"):
-            st.session_state.app_mode = "GESTAO_OS"
-            st.rerun()
-                
-    with col4:
-        st.markdown("""
-            <div class="big-hub-btn btn-red">
+            </a>
+            <a href="?page=OBD2" class="big-hub-btn" target="_self">
                 <div class="emoji-icon">🚗</div>
                 <h2>Scanner OBD2</h2>
-            </div>
-        """, unsafe_allow_html=True)
-        if st.button("Acessar Diagnóstico DTC", key="btn_nav_obd2", use_container_width=True, type="secondary"):
-            st.session_state.app_mode = "OBD2"
-            st.rerun()
+            </a>
+        </div>
+    """, unsafe_allow_html=True)
