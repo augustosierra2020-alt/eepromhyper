@@ -243,7 +243,31 @@ else:
 # ==========================================
 # 6. CENTRAL ASSISTENTE CHIP (POP-UP FLUTUANTE)
 # ==========================================
-with st.popover("🤖"):
+
+# 1. Injeção CSS direcionada especificamente para o botão nativo do st.popover
+st.markdown("""
+    <style>
+        /* Alvo específico no Streamlit para botões de popover */
+        div[data-testid="stPopover"] > button {
+            background: linear-gradient(135deg, #FF8C00 0%, #E65100 100%) !important;
+            color: white !important;
+            border: none !important;
+            border-radius: 50px !important;
+            padding: 12px 25px !important;
+            font-weight: bold !important;
+            font-size: 16px !important;
+            box-shadow: 0 8px 20px rgba(230, 81, 0, 0.4) !important;
+            transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1) !important;
+        }
+        div[data-testid="stPopover"] > button:hover {
+            transform: scale(1.05) translateY(-3px) !important;
+            box-shadow: 0 12px 25px rgba(230, 81, 0, 0.6) !important;
+        }
+    </style>
+""", unsafe_allow_html=True)
+
+# 2. Renderização do Popover e lógicas do Chip
+with st.popover("🤖 Chip"):
     st.markdown("#### 💬 Chip Assistant")
     
     # Renderiza mensagens anteriores do chat
@@ -261,7 +285,8 @@ with st.popover("🤖"):
         if any(c.isdigit() for c in prompt) and "P" in prompt.upper():
             resp = f"🔧 **Análise de Diagnóstico ({prompt.upper()}):** Detectei que este código refere-se a uma anomalia de injeção ou falha em sensor. Recomendo cruzar os dados na aba OBD2 para uma pesquisa aprofundada na web."
         else:
-            resp = "Chefe, recebi sua mensagem. Os sistemas do HyperTork Hub estão 100% operacionais e protegidos. Posso processar as matrizes HEX ou buscar as pinagens EEPROM que você precisar."
+            # Mensagem atualizada conforme sua preferência
+            resp = "Oi, eu sou o Chip! Como posso ajudar?"
         
         st.session_state.chat_historico.append({"role": "assistant", "content": resp})
         st.rerun()
