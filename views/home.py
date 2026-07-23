@@ -1,12 +1,14 @@
 import os
+import io
 import base64
 import streamlit as st
 import pandas as pd
+from datetime import datetime
+from core.db import get_db_connection
 
 # Mapeamentos de Caminho
 BASE_DIR = os.path.abspath(os.path.dirname(os.path.dirname(__file__)))
 CAMINHO_LOGO_PRINCIPAL = os.path.join(BASE_DIR, "Logos", "logo.png")
-CAMINHO_PLANILHA_FP = os.path.join(BASE_DIR, "Fp.xlsx")
 
 def render_home():
     # Renderização da Logo Principal via Base64
@@ -27,19 +29,46 @@ def render_home():
 
     st.markdown("<h2 style='text-align: center; color: #1E88E5; margin-bottom: 30px; font-weight: 700;'>PAINEL DE CONTROLE OPERACIONAL</h2>", unsafe_allow_html=True)
 
-    # --- DASHBOARD COM AS 3 MÉTRICAS SOLICITADAS DA PLANILHA FP ---
+    # ====================================================
+    # LÓGICA DE DATA: IDENTIFICANDO O ÚLTIMO MÊS FECHADO
+    # ====================================================
+    meses = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"]
+    hoje = datetime.now()
+    mes_atual_idx = hoje.month - 1  # Índices de 0 a 11
+    ano_atual = hoje.year
+
+    # Volta 1 mês no tempo
+    if mes_atual_idx == 0:  # Se for Janeiro, volta pra Dezembro do ano passado
+        mes_passado_idx = 11
+        ano_passado = ano_atual - 1
+    else:
+        mes_passado_idx = mes_atual_idx - 1
+        ano_passado = ano_atual
+
+    mes_passado_nome = meses[mes_passado_idx]
+    target_mes_ano = f"{mes_passado_nome} - {ano_passado}"
+
+    # ====================================================
+    # EXTRAÇÃO DE DADOS DA PLANILHA NO BANCO DE DADOS
+    # ====================================================
     total_clientes = 0
     total_servicos = 0
     total_montadoras = 0
-    status_fp = "Aguardando Sincronização"
 
     try:
-        if os.path.exists(CAMINHO_PLANILHA_FP):
-            df_fp = pd.read_excel(CAMINHO_PLANILHA_FP)
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        # Busca a planilha específica do mês que fechou por último
+        cursor.execute("SELECT dados_json FROM planilhas_mensais WHERE mes_ano = ?", (target_mes_ano,))
+        row = cursor.fetchone()
+        
+        if row and row[0]:
+            df_fp = pd.read_json(io.StringIO(row[0]))
             
             # 1. Total de Clientes Identificados (Clientes Únicos)
-            col_cliente = "Flash Point" if "Flash Point" in df_fp.columns else df_fp.columns[0]
-            total_clientes = df_fp[col_cliente].nunique()
+            col_cliente = "Flash Point" if "Flash Point" in df_fp.columns else (df_fp.columns[0] if len(df_fp.columns) > 0 else None)
+            if col_cliente:
+                total_clientes = df_fp[col_cliente].nunique()
             
             # 2. Total de Serviços realizados (Total de Linhas da Planilha)
             total_servicos = len(df_fp)
@@ -53,14 +82,12 @@ def render_home():
             
             if col_montadora:
                 total_montadoras = df_fp[col_montadora].nunique()
-            else:
-                total_montadoras = 0
                 
-            status_fp = "Online 🟢"
     except Exception:
-        status_fp = "Erro de Leitura 🔴"
+        pass # Mantém os contadores em zero caso a planilha deste mês ainda não tenha sido arquivada
         
-    st.markdown("### 📊 Visão Geral: Base de Clientes (Fp)")
+    # Título do dashboard dinâmico mostrando a qual mês os dados pertencem (ex: Referência: Junho - 2026)
+    st.markdown(f"### 📊 Visão Geral: Base de Clientes (Referência: {target_mes_ano})")
     
     # Exibição dos 3 cards de métricas
     m1, m2, m3 = st.columns(3)
@@ -68,7 +95,6 @@ def render_home():
     m2.metric("Total de Serviços realizados", total_servicos)
     m3.metric("Total de Montadoras identificadas", total_montadoras)
     
-    st.caption(f"Status do Arquivo Fp: {status_fp}")
     st.markdown("---")
 
     # --- GRID DE NAV PREMIUM (DARK GLASSMORPHISM MONOCROMÁTICO) ---

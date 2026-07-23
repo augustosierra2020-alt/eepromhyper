@@ -244,24 +244,41 @@ else:
 # 6. CENTRAL ASSISTENTE CHIP (POP-UP FLUTUANTE)
 # ==========================================
 
-# 1. Injeção CSS direcionada especificamente para o botão nativo do st.popover
+import streamlit as st
+
+# --- INJEÇÃO CSS GLOBAL: FORÇANDO O POPOVER A FLUTUAR COM COR PREMIUM ---
 st.markdown("""
     <style>
-        /* Alvo específico no Streamlit para botões de popover */
+        /* 1. Prende o container inteiro do Popover no canto inferior direito (Botão Flutuante Real) */
+        div[data-testid="stPopover"] {
+            position: fixed !important;
+            bottom: 40px !important;
+            right: 40px !important;
+            z-index: 99999 !important;
+        }
+
+        /* 2. Aplica o fundo Laranja e o formato arredondado ao Botão */
         div[data-testid="stPopover"] > button {
             background: linear-gradient(135deg, #FF8C00 0%, #E65100 100%) !important;
-            color: white !important;
             border: none !important;
             border-radius: 50px !important;
-            padding: 12px 25px !important;
-            font-weight: bold !important;
-            font-size: 16px !important;
-            box-shadow: 0 8px 20px rgba(230, 81, 0, 0.4) !important;
+            padding: 15px 30px !important;
+            box-shadow: 0 8px 25px rgba(230, 81, 0, 0.5) !important;
             transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1) !important;
         }
+
+        /* 3. Força a cor Branca no texto e no emoji de dentro do botão */
+        div[data-testid="stPopover"] > button p {
+            color: #FFFFFF !important;
+            font-weight: 800 !important;
+            font-size: 18px !important;
+            margin: 0 !important;
+        }
+
+        /* 4. Efeito de Hover (passar o mouse) */
         div[data-testid="stPopover"] > button:hover {
-            transform: scale(1.05) translateY(-3px) !important;
-            box-shadow: 0 12px 25px rgba(230, 81, 0, 0.6) !important;
+            transform: scale(1.08) translateY(-5px) !important;
+            box-shadow: 0 12px 30px rgba(230, 81, 0, 0.7) !important;
         }
     </style>
 """, unsafe_allow_html=True)
