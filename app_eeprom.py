@@ -246,39 +246,44 @@ else:
 
 import streamlit as st
 
-# --- INJEÇÃO CSS GLOBAL: FORÇANDO O POPOVER A FLUTUAR COM COR PREMIUM ---
+# --- INJEÇÃO CSS GLOBAL: MODO FORÇA BRUTA PARA O BOTÃO FLUTUANTE ---
 st.markdown("""
     <style>
-        /* 1. Prende o container inteiro do Popover no canto inferior direito (Botão Flutuante Real) */
+        /* 1. Caça o contêiner do Popover e joga ele para fora da tela comum (Flutuante) */
         div[data-testid="stPopover"] {
             position: fixed !important;
-            bottom: 40px !important;
-            right: 40px !important;
-            z-index: 99999 !important;
+            bottom: 30px !important;
+            right: 30px !important;
+            z-index: 999999 !important;
         }
 
-        /* 2. Aplica o fundo Laranja e o formato arredondado ao Botão */
-        div[data-testid="stPopover"] > button {
+        /* 2. Caça QUALQUER botão dentro do Popover (sem restrição de nível) e aplica o Laranja */
+        div[data-testid="stPopover"] button {
             background: linear-gradient(135deg, #FF8C00 0%, #E65100 100%) !important;
-            border: none !important;
+            background-color: #FF8C00 !important; /* Fallback de cor sólida */
+            color: #FFFFFF !important;
+            border: 2px solid #E65100 !important;
             border-radius: 50px !important;
-            padding: 15px 30px !important;
-            box-shadow: 0 8px 25px rgba(230, 81, 0, 0.5) !important;
-            transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1) !important;
+            padding: 12px 28px !important;
+            box-shadow: 0 8px 25px rgba(230, 81, 0, 0.6) !important;
+            transition: all 0.3s ease !important;
         }
 
-        /* 3. Força a cor Branca no texto e no emoji de dentro do botão */
-        div[data-testid="stPopover"] > button p {
+        /* 3. Força a cor do texto e do ícone do botão para branco puro */
+        div[data-testid="stPopover"] button p, 
+        div[data-testid="stPopover"] button span,
+        div[data-testid="stPopover"] button div {
             color: #FFFFFF !important;
-            font-weight: 800 !important;
+            font-weight: 900 !important;
             font-size: 18px !important;
             margin: 0 !important;
         }
 
-        /* 4. Efeito de Hover (passar o mouse) */
-        div[data-testid="stPopover"] > button:hover {
-            transform: scale(1.08) translateY(-5px) !important;
-            box-shadow: 0 12px 30px rgba(230, 81, 0, 0.7) !important;
+        /* 4. Efeito de Hover (passar o mouse) agressivo */
+        div[data-testid="stPopover"] button:hover {
+            transform: scale(1.1) translateY(-4px) !important;
+            box-shadow: 0 12px 30px rgba(230, 81, 0, 0.9) !important;
+            border-color: #FFFFFF !important;
         }
     </style>
 """, unsafe_allow_html=True)
