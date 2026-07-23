@@ -5,7 +5,7 @@ import base64
 import re
 import unicodedata
 from core.db import get_db_connection
-from services.hf_sync import backup_local_para_nuvem_async
+from services.hf_sync import backup_local_para_nuvem_async, executar_backup_sincrono
 
 HF_TOKEN = os.environ.get("HF_TOKEN")
 BASE_DIR = os.path.abspath(os.path.dirname(os.path.dirname(__file__)))
@@ -46,16 +46,21 @@ def render_adm():
     st.markdown("---")
     
     tab_infra, tab_logos, tab_dados = st.tabs([
-        "🖥️ Infraestrutura & Pente Fino", 
+        "🖥️ Infraestrutura & Sincronização", 
         "🖼️ Repositório Físico de Logos", 
         "📊 Estatísticas Globais"
     ])
     
+    # ==========================================
+    # ABA 1: INFRAESTRUTURA, PENTE FINO & BACKUP
+    # ==========================================
     with tab_infra:
-        st.subheader("📋 Diagnóstico Técnico de Infraestrutura")
-        st.write("Clique abaixo para invocar a auditoria interna do Chip no núcleo do sistema.")
+        st.subheader("📋 Diagnóstico Técnico & Sincronização de Emergência")
+        st.write("Invoque a auditoria interna do Chip ou force a sincronização total com o Dataset do Hugging Face.")
         
-        if st.button("🔍 Rodar Pente Fino no Sistema (Status & Erros)", type="primary", use_container_width=True):
+        col_btn1, col_btn2 = st.columns(2)
+        
+        if col_btn1.button("🔍 Rodar Pente Fino no Sistema (Status & Erros)", type="primary", use_container_width=True):
             with st.spinner("Chip inspecionando portas lógicas e tabelas dinâmicas..."):
                 time.sleep(1)
                 
@@ -115,6 +120,18 @@ def render_adm():
                 st.warning(analise_chip)
                 st.success("🏁 Pente fino concluído. Core operacional estruturado!")
 
+        if col_btn2.button("☁️ Forçar Backup Total (Hugging Face)", type="primary", use_container_width=True):
+            with st.spinner("Empacotando e enviando banco de dados, logos e planilha Fp.xlsx para a nuvem..."):
+                sucesso, msg = executar_backup_sincrono()
+                time.sleep(1)
+                if sucesso:
+                    st.success(f"✅ {msg}")
+                else:
+                    st.error(f"❌ Falha no Backup: {msg}")
+
+    # ==========================================
+    # ABA 2: REPOSITÓRIO FÍSICO DE LOGOS
+    # ==========================================
     with tab_logos:
         st.subheader("🖼️ Repositório de Logos de Montadoras (Upload em Lote)")
         st.write("Selecione uma ou várias fotos de logos simultaneamente. O sistema manterá em espera até que a montadora com nome correspondente seja criada.")
@@ -170,6 +187,9 @@ def render_adm():
                                     except Exception as e:
                                         st.error(f"Erro: {e}")
 
+    # ==========================================
+    # ABA 3: ESTATÍSTICAS E VOLUMES
+    # ==========================================
     with tab_dados:
         st.subheader("📈 Volumes Cadastrados na Oficina")
         try:
