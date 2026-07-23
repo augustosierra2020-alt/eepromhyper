@@ -67,8 +67,11 @@ def extrair_metadados_binario(bytes_binario: bytes) -> dict:
         elif wmi.startswith(("9BF", "1FA")): metadados["Fabricante"] = "FORD"
         elif wmi.startswith(("93H", "JHM")): metadados["Fabricante"] = "HONDA"
         elif wmi.startswith(("9BR", "JT")): metadados["Fabricante"] = "TOYOTA"
-        elif wmi.startswith(("93Y", "VF3")): metadados["Fabricante"] = "PEUGEOT / CITROEN"
+        elif wmi.startswith(("93Y", "VF3", "VF7")): metadados["Fabricante"] = "PEUGEOT / CITROEN"
         elif wmi.startswith(("98R", "KN")): metadados["Fabricante"] = "HYUNDAI / KIA"
+        elif wmi.startswith(("WBA", "WBS")): metadados["Fabricante"] = "BMW"
+        elif wmi.startswith(("WDD", "WDB")): metadados["Fabricante"] = "MERCEDES-BENZ"
+        elif wmi.startswith(("1C4", "1J4")): metadados["Fabricante"] = "JEEP / CHRYSLER"
 
     # 4. Part Numbers GM Delco (8 dígitos numéricos: 12xxxxxx, 24xxxxxx, etc.)
     pns_gm = list(dict.fromkeys(re.findall(r'\b(?:12|24|55|13|28|84|92)\d{6}\b', texto_completo)))
