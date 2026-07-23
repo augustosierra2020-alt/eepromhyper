@@ -20,6 +20,78 @@ MAX_DIFFS = 3000
 GAP_THRESHOLD = 48
 
 # ==========================================
+# FUNÇÕES CORE: METADADOS RACE (DIMSPORT)
+# ==========================================
+def processar_info_race(conteudo_texto: str) -> dict:
+    """Lê o texto gerado pelo Dimsport Race e extrai os metadados."""
+    metadados = {}
+    linhas = conteudo_texto.splitlines()
+    
+    for linha in linhas:
+        linha = linha.strip()
+        if not linha:
+            continue
+            
+        if "Parcial:" in linha and ":" in linha:
+            partes = linha.split(":")
+            if len(partes) >= 2:
+                metadados["Tipo Leitura"] = partes[-1].strip()
+            continue
+
+        if ":" in linha:
+            chave, valor = linha.split(":", 1)
+            chave = chave.strip()
+            valor = valor.strip()
+            if valor:
+                metadados[chave] = valor
+                
+    return metadados
+
+def renderizar_aba_info_race(metadados: dict):
+    """Renderiza o painel visual com metadados do arquivo .TXT da ECU."""
+    if not metadados:
+        st.info("ℹ️ Nenhum arquivo de metadados do Race (.txt) foi anexado para esta análise.")
+        return
+
+    st.markdown("### 📋 Metadados e Informações do Arquivo ECU (Race)")
+    
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("Fabricante", metadados.get("Fabricante", "N/A"))
+    with col2:
+        st.metric("Modelo / Veículo", metadados.get("Modelo", "N/A"))
+    with col3:
+        st.metric("Hardware ECU", metadados.get("Tipo planta", metadados.get("Hardware Nr.", "N/A")))
+
+    st.markdown("---")
+
+    col_a, col_b = st.columns(2)
+    with col_a:
+        with st.container(border=True):
+            st.markdown("#### ⚙️ Identificação do Software & Hardware")
+            st.write(f"**Motor / Tipo:** `{metadados.get('Tipo', 'N/A')}`")
+            st.write(f"**Protocolo:** `{metadados.get('Protocolo', 'N/A')}`")
+            st.write(f"**Hardware Nr.:** `{metadados.get('Hardware Nr.', 'N/A')}`")
+            st.write(f"**Software Nr.:** `{metadados.get('Software Nr.', 'N/A')}`")
+            st.write(f"**Software Upgrade:** `{metadados.get('Software Upgrade Nr.', 'N/A')}`")
+            st.write(f"**Versão Hardware:** `{metadados.get('Versão Hardware', 'N/A')}`")
+
+    with col_b:
+        with st.container(border=True):
+            st.markdown("#### 🚗 Dados do Veículo & Leitura")
+            st.write(f"**Chassi (VIN):** `{metadados.get('Chassis', 'N/A')}`")
+            st.write(f"**Data da Leitura:** `{metadados.get('Data arquivo', 'N/A')} - {metadados.get('Hora arquivo', 'N/A')}`")
+            st.write(f"**Data Software:** `{metadados.get('Data Software', 'N/A')}`")
+            st.write(f"**Tipo Hardware:** `{metadados.get('Tipo hardware', 'N/A')}`")
+            st.write(f"**Código Cliente:** `{metadados.get('Código cliente', 'N/A')}`")
+            st.write(f"**ID Único:** `{metadados.get('Número de identificação único', 'N/A')}`")
+
+    with st.expander("🔍 Detalhes do Arquivo Parcial / Eprom"):
+        st.write(f"**Endereço Inicial:** `{metadados.get('Endereço inicial do arquivo parcial', 'N/A')}`")
+        st.write(f"**Tamanho Parcial:** `{metadados.get('Tamanho arquivo parcial', 'N/A')}`")
+        st.write(f"**Tamanho Eprom:** `{metadados.get('Tamanho Eprom', 'N/A')}`")
+
+# ==========================================
 # FUNÇÕES CORE: ENGENHARIA REVERSA 
 # ==========================================
 def processar_bytes_para_valores(bytes_crus, bits=16, signed=False, endian='big'):
@@ -98,7 +170,9 @@ def formatar_resumo_ia(blocos):
     return resumo_ia
 
 def analisar_remap_com_ia(resumo_blocos, info_veiculo, classificacao):
-    return f"🛠️ **Laudo Técnico Preliminar de Calibração (Chip Engine):**\n\nIdentificação da ECU: {info_veiculo}\nAssinatura do Firmware: **{classificacao}**\n\nEstrutura Topológica das Modificações:\n{resumo_blocos}"
+    # REGRA DE SEGURANÇA: Exibe classificação estritamente se houver certeza absoluta
+    linha_classificacao = f"\nAssinatura do Firmware / Classificação: **{classificacao}**" if classificacao in ["MOD", "OFF", "STG 2", "STAGE 2", "STAG 2"] else ""
+    return f"🛠️ **Laudo Técnico Preliminar de Calibração (Chip Engine):**\n\nIdentificação da ECU: {info_veiculo}{linha_classificacao}\n\nEstrutura Topológica das Modificações:\n{resumo_blocos}"
 
 def obter_checksum_arquivo(dados_bytes):
     if not dados_bytes: return 0
@@ -135,15 +209,66 @@ def carregar_arquivos_hex_por_id(hist_id: int):
     return None, None, None, None
 
 # ==========================================
-# RENDERIZADOR DA VIEW
+# RENDERIZADOR DA VIEW PRINCIPAL
 # ==========================================
 def render_hex_compare():
     if "zoom_janela" not in st.session_state: st.session_state.zoom_janela = 256
     if "view_addr_atual" not in st.session_state: st.session_state.view_addr_atual = 0
 
+    # ----------------------------------------------------
+    # MODO TELA CHEIA 2D
+    # ----------------------------------------------------
+    if st.session_state.get('focus_mode') == '2D' and st.session_state.get('hex_atual'):
+        dados = st.session_state.hex_atual
+        st.title("🔍 Modo Expandido Total - Mapa 2D")
+        if st.button("❌ Sair do Modo Tela Cheia (Voltar ao Workspace)", type="primary", use_container_width=True):
+            st.session_state.focus_mode = None
+            st.rerun()
+            
+        bits_val = int(st.session_state.get('escala_op_saved', '16 bits').split()[0])
+        b_step = bits_val // 8
+        byteorder_str = st.session_state.get('byteorder_saved', 'big')
+        is_signed = st.session_state.get('signed_saved', False)
+        inverter_val = st.session_state.get('inverter_saved', False)
+        
+        tamanho_total_arquivo = len(dados['bytes_orig'])
+        janela_pontos = st.session_state.zoom_janela
+        janela_bytes_tamanho = janela_pontos * b_step
+        addr_inicio = st.session_state.view_addr_atual
+        addr_fim = min(tamanho_total_arquivo, addr_inicio + janela_bytes_tamanho)
+
+        bytes_janela_ori = dados['bytes_orig'][addr_inicio:addr_fim]
+        bytes_janela_mod = dados['bytes_mod'][addr_inicio:addr_fim]
+
+        ori_y = processar_bytes_para_valores(bytes_janela_ori, bits_val, is_signed, byteorder_str)
+        mod_y = processar_bytes_para_valores(bytes_janela_mod, bits_val, is_signed, byteorder_str)
+        
+        if inverter_val:
+            max_v = (2**bits_val) - 1
+            ori_y = max_v - ori_y
+            mod_y = max_v - mod_y
+            
+        eixo_x = np.arange(addr_inicio, addr_inicio + len(ori_y) * b_step, b_step)
+        
+        fig_2d_fs = go.Figure()
+        fig_2d_fs.add_trace(go.Scatter(x=eixo_x, y=ori_y[:len(eixo_x)], mode='lines', name='Original (ORI)', line=dict(color='#1E88E5', width=2)))
+        fig_2d_fs.add_trace(go.Scatter(x=eixo_x, y=mod_y[:len(eixo_x)], mode='lines', name='Modificado (MOD)', line=dict(color='#FF0000', width=2)))
+
+        fig_2d_fs.update_layout(
+            height=800, paper_bgcolor='#121212', plot_bgcolor='#121212', font=dict(color='white'), dragmode='pan', hovermode='closest',
+            xaxis=dict(title="Endereço Hexadecimal", tickformat="06X", tickprefix="0x", showspikes=True, spikecolor="#9C27B0", spikesnap="cursor", spikemode="across"),
+            yaxis=dict(title="Valor Convertido", fixedrange=False, showspikes=True, spikecolor="#9C27B0", spikesnap="cursor", spikemode="across"),
+            margin=dict(l=20, r=20, b=20, t=30), legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+        )
+        st.plotly_chart(fig_2d_fs, use_container_width=True, config={'scrollZoom': True, 'displayModeBar': True})
+        st.stop()
+
+    # ----------------------------------------------------
+    # MODO TELA CHEIA 3D
+    # ----------------------------------------------------
     if st.session_state.get('focus_mode') == '3D' and st.session_state.get('hex_atual'):
         dados = st.session_state.hex_atual
-        st.title("🔍 Modo Expandido Total - Mapa 3D")
+        st.title("📐 Modo Expandido Total - Mapa 3D")
         if st.button("❌ Sair do Modo Tela Cheia (Voltar ao Workspace)", type="primary", use_container_width=True):
             st.session_state.focus_mode = None
             st.rerun()
@@ -193,6 +318,9 @@ def render_hex_compare():
         st.plotly_chart(fig_3d, use_container_width=True, config={'displayModeBar': True, 'scrollZoom': True, 'displaylogo': False})
         st.stop()
 
+    # ----------------------------------------------------
+    # WORKSPACE PADRÃO DO ESTÚDIO
+    # ----------------------------------------------------
     st.title("🛠️ Estúdio Avançado de Calibração")
     st.markdown("Engine unificada de alta performance com análise geométrica 3D, sombreamento delta 2D e grade de engenharia térmica.")
 
@@ -209,31 +337,60 @@ def render_hex_compare():
                         if ori_b and mod_b:
                             diffs, len1, len2 = comparar_arquivos_hex(ori_b, mod_b)
                             blocos = obter_blocos_diferencas(diffs)
-                            st.session_state.hex_atual = {"timestamp": h_data, "veiculo": veic_b, "len1": len1, "len2": len2, "diffs": diffs, "blocos": blocos, "laudo": laudo_b, "bytes_orig": ori_b, "bytes_mod": mod_b, "salvo": True}
+                            st.session_state.hex_atual = {"timestamp": h_data, "veiculo": veic_b, "len1": len1, "len2": len2, "diffs": diffs, "blocos": blocos, "laudo": laudo_b, "bytes_orig": ori_b, "bytes_mod": mod_b, "salvo": True, "metadados_race": {}}
                             st.session_state.view_addr_atual = max(0, blocos[0]['inicio'] - 100) if blocos else 0
                             st.rerun()
 
     with st.container(border=True):
-        col1, col2 = st.columns(2)
+        col1, col2, col3 = st.columns(3)
         with col1: arq_original = st.file_uploader("📂 Arquivo Original (.ori, .bin, .hex)", type=["bin", "hex", "ori", "mod", "dat"])
         with col2: arq_modificado = st.file_uploader("📂 Arquivo Modificado (.mod, .bin, .hex)", type=["bin", "hex", "ori", "mod", "dat"])
+        with col3: arq_race_txt = st.file_uploader("📋 Info Race (.txt - Metadados)", type=["txt"])
+        
         info_veiculo = st.text_input("🚙 Qual o veículo/ECU?", placeholder="Ex: Bosch MD1CS001 / Siemens SID208")
         
         if st.button("🚀 Iniciar Engenharia Reversa", use_container_width=True, type="primary"):
             if arq_original and arq_modificado:
                 with st.spinner("Comparando matrizes binárias..."):
-                    bytes_orig = arq_original.read(); bytes_mod = arq_modificado.read()
+                    bytes_orig = arq_original.read()
+                    bytes_mod = arq_modificado.read()
+                    
+                    metadados_race = {}
+                    if arq_race_txt:
+                        try:
+                            str_txt = arq_race_txt.read().decode("utf-8", errors="ignore")
+                            metadados_race = processar_info_race(str_txt)
+                        except Exception: pass
+                        
+                    nome_veiculo_final = info_veiculo
+                    if not nome_veiculo_final and metadados_race:
+                        nome_veiculo_final = f"{metadados_race.get('Fabricante', '')} {metadados_race.get('Modelo', '')}".strip()
+                    if not nome_veiculo_final:
+                        nome_veiculo_final = "ECU Não Identificada"
+
                     diffs, len1, len2 = comparar_arquivos_hex(bytes_orig, bytes_mod)
                     if diffs:
                         blocos_encontrados = obter_blocos_diferencas(diffs)
                         temp_dados = {"blocos": blocos_encontrados, "bytes_mod": bytes_mod}
                         classificacao_exata = obter_classificacao_heuristica(temp_dados)
-                        laudo_ia = analisar_remap_com_ia(formatar_resumo_ia(blocos_encontrados), info_veiculo, classificacao_exata)
+                        laudo_ia = analisar_remap_com_ia(formatar_resumo_ia(blocos_encontrados), nome_veiculo_final, classificacao_exata)
                         
-                        st.session_state.hex_atual = {"timestamp": datetime.now().strftime("%d/%m/%Y %H:%M"), "veiculo": info_veiculo, "len1": len1, "len2": len2, "diffs": diffs, "blocos": blocos_encontrados, "laudo": laudo_ia, "bytes_orig": bytes_orig, "bytes_mod": bytes_mod, "salvo": False}
+                        st.session_state.hex_atual = {
+                            "timestamp": datetime.now().strftime("%d/%m/%Y %H:%M"), 
+                            "veiculo": nome_veiculo_final, 
+                            "len1": len1, 
+                            "len2": len2, 
+                            "diffs": diffs, 
+                            "blocos": blocos_encontrados, 
+                            "laudo": laudo_ia, 
+                            "bytes_orig": bytes_orig, 
+                            "bytes_mod": bytes_mod, 
+                            "salvo": False,
+                            "metadados_race": metadados_race
+                        }
                         st.session_state.view_addr_atual = max(0, blocos_encontrados[0]['inicio'] - 100) if blocos_encontrados else 0
                         st.rerun() 
-            else: st.error("Insira ambos os arquivos.")
+            else: st.error("Insira ao menos os arquivos Original e Modificado.")
 
     if st.session_state.get('hex_atual'):
         dados = st.session_state.hex_atual
@@ -242,7 +399,7 @@ def render_hex_compare():
         expandir_graficos = st.toggle("🔲 Ativar Modo Ampliado no Painel (Gráficos Longos)", value=False)
         altura_dinamica = 800 if expandir_graficos else 450
         
-        st.subheader(f"📊 Workspace de Calibração: {dados['veiculo'] or 'ECU Não Identificada'}")
+        st.subheader(f"📊 Workspace de Calibração: {dados['veiculo']}")
         
         col_i1, col_i2, col_i3, col_i4 = st.columns(4)
         col_i1.metric("Tamanho Original", f"{dados['len1']} bytes")
@@ -344,7 +501,13 @@ def render_hex_compare():
         matriz_mod_eng = valores_mod_eng.reshape((linhas, colunas))
         matriz_delta_pct = valores_delta_pct.reshape((linhas, colunas))
 
-        tab_2d, tab_3d, tab_grid = st.tabs(["📈 Gráfico 2D (Contínuo com Minimapa)", "📐 Superfície 3D (Topografia)", "🧮 Grade Térmica (Hex Dump)"])
+        # Estrutura de Abas com a integração de Metadados da ECU
+        tab_2d, tab_3d, tab_grid, tab_race_info = st.tabs([
+            "📈 Gráfico 2D (Contínuo com Minimapa)", 
+            "📐 Superfície 3D (Topografia)", 
+            "🧮 Grade Térmica (Hex Dump)",
+            "ℹ️ Metadados ECU (Race Info)"
+        ])
 
         with tab_2d:
             st.slider("🖱️ Navegação Rápida (Barra de Rolagem de Endereços)", 0, max_addr_possivel, key="view_addr_atual", step=1, format="0x%x")
@@ -391,6 +554,10 @@ def render_hex_compare():
                 margin=dict(l=10, r=10, b=10, t=30), legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
             )
             st.plotly_chart(fig_2d, use_container_width=True, config={'scrollZoom': True, 'displayModeBar': True})
+            
+            if st.button("🔍 Expandir Gráfico 2D em Tela Cheia", key="btn_fs_2d", use_container_width=True):
+                st.session_state.focus_mode = '2D'
+                st.rerun()
 
         with tab_3d:
             st.caption(f"📐 Geometria do mapa detectada: Matriz de **{linhas} linhas** x **{colunas} colunas**")
@@ -421,7 +588,10 @@ def render_hex_compare():
                 st.dataframe(df_formatado, use_container_width=True, height=altura_dinamica)
             else:
                 st.dataframe(df_matriz, use_container_width=True, height=altura_dinamica)
-            
+
+        with tab_race_info:
+            renderizar_aba_info_race(dados.get('metadados_race', {}))
+
         st.markdown("---")
         st.markdown("### 🔍 Detalhamento Técnico Completo (Tabela Hexadecimal)")
         df_diff = pd.DataFrame([{k: v for k, v in d.items() if k != "EnderecoInt"} for d in dados['diffs']])
