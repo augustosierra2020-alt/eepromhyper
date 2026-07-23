@@ -5,7 +5,7 @@ from huggingface_hub import HfApi, hf_hub_download, snapshot_download
 
 HF_TOKEN = os.environ.get("HF_TOKEN")
 # Repositório do Dataset no Hugging Face (Ajuste caso o nome do seu repositório seja diferente)
-HF_DATASET_REPO = os.environ.get("HF_DATASET_REPO", "GrizzlyBear25/HyperTork_Data")
+HF_DATASET_REPO = os.environ.get("HF_DATASET_REPO", "GrizzlyBear25/HyperTork_DB")
 
 BASE_DIR = os.path.abspath(os.path.dirname(os.path.dirname(__file__)))
 
