@@ -4,6 +4,7 @@ import plotly.graph_objects as go
 import zlib
 import pandas as pd
 import re
+import hashlib
 from typing import Tuple, List, Dict, Any
 from datetime import datetime
 
@@ -25,7 +26,8 @@ GAP_THRESHOLD = 48
 def extrair_metadados_binario(bytes_binario: bytes) -> dict:
     """
     Realiza varredura analítica no binário (.ORI/.MOD) para extrair 
-    chassis (VIN), Part Numbers, família de ECU e códigos de calibração.
+    chassis (VIN), Part Numbers, família de ECU, Checksum MD5, Magic Bytes
+    e faz consulta no Banco de Dados.
     """
     if not bytes_binario:
         return {}
@@ -36,11 +38,25 @@ def extrair_metadados_binario(bytes_binario: bytes) -> dict:
     metadados["Tamanho arquivo parcial"] = f"0x{tam:08X}"
     metadados["Endereço inicial do arquivo parcial"] = "0x00000000"
     
+    # --- 1. INTEGRAÇÃO: Checksum MD5 (Assinatura Criptográfica Única) ---
+    metadados["Checksum MD5"] = hashlib.md5(bytes_binario).hexdigest().upper()
+    
+    # --- 2. INTEGRAÇÃO: Magic Bytes (Assinatura de Cabeçalho dos Primeiros Bytes) ---
+    header_bytes = bytes_binario[:16]
+    metadados["Magic Bytes (Hex)"] = header_bytes[:4].hex().upper()
+    
+    if bytes_binario.startswith(b"\x01\xA3\xB5"):
+        metadados["Fabricante"] = "BOSCH"
+    elif bytes_binario.startswith(b"\xFF\x10\x20"):
+        metadados["Fabricante"] = "MAGNETI MARELLI"
+    elif b"DELCO" in header_bytes or b"GM" in header_bytes:
+        metadados["Fabricante"] = "CHEVROLET / DELCO"
+
     # Decodificação de sequências ASCII presentes no arquivo
     strings_ascii = [s.decode('ascii', errors='ignore') for s in re.findall(b'[\x20-\x7E]{4,}', bytes_binario)]
     texto_completo = " ".join(strings_ascii)
     
-    # 1. VIN / Chassis (17 caracteres alfanuméricos ISO 3779)
+    # --- 3. VIN / Chassis (17 caracteres alfanuméricos ISO 3779) ---
     vins = re.findall(r'\b[1-9A-HJ-NPR-Z0-9]{17}\b', texto_completo)
     if vins:
         metadados["Chassis"] = vins[0]
@@ -54,7 +70,7 @@ def extrair_metadados_binario(bytes_binario: bytes) -> dict:
         elif wmi.startswith(("93Y", "VF3")): metadados["Fabricante"] = "PEUGEOT / CITROEN"
         elif wmi.startswith(("98R", "KN")): metadados["Fabricante"] = "HYUNDAI / KIA"
 
-    # 2. Part Numbers GM Delco (8 dígitos numéricos: 12xxxxxx, 24xxxxxx, etc.)
+    # --- 4. Part Numbers GM Delco (8 dígitos numéricos: 12xxxxxx, 24xxxxxx, etc.) ---
     pns_gm = list(dict.fromkeys(re.findall(r'\b(?:12|24|55|13|28|84|92)\d{6}\b', texto_completo)))
     if pns_gm:
         if len(pns_gm) >= 1: metadados["Software Nr."] = pns_gm[0]
@@ -62,7 +78,7 @@ def extrair_metadados_binario(bytes_binario: bytes) -> dict:
         if len(pns_gm) >= 3: metadados["Software Upgrade Nr."] = pns_gm[2]
         if "Fabricante" not in metadados: metadados["Fabricante"] = "CHEVROLET US/EU/SAM"
 
-    # 3. Números Bosch (1037xxxxxx / 0281xxxxxx / 0261xxxxxx)
+    # --- 5. Números Bosch (1037xxxxxx / 0281xxxxxx / 0261xxxxxx) ---
     pns_bosch_sw = re.findall(r'\b1037\d{6}\b', texto_completo)
     pns_bosch_hw = re.findall(r'\b0281\d{6}\b|\b0261\d{6}\b', texto_completo)
     if pns_bosch_sw and "Software Nr." not in metadados:
@@ -71,7 +87,20 @@ def extrair_metadados_binario(bytes_binario: bytes) -> dict:
     if pns_bosch_hw and "Hardware Nr." not in metadados:
         metadados["Hardware Nr."] = pns_bosch_hw[0]
 
-    # 4. Família da Central / Planta (E80, E39, E78, EDC17, MD1, etc.)
+    # --- 6. INTEGRAÇÃO: Offsets Físicos Fixos (Fallback caso não ache por Regex) ---
+    if "Hardware Nr." not in metadados and len(bytes_binario) > 0x400:
+        if metadados.get("Fabricante") == "BOSCH":
+            hw_str = bytes_binario[0x200:0x20A].decode("ascii", errors="ignore").strip()
+            sw_str = bytes_binario[0x300:0x30A].decode("ascii", errors="ignore").strip()
+            if hw_str: metadados["Hardware Nr."] = hw_str
+            if sw_str: metadados["Software Nr."] = sw_str
+        elif metadados.get("Fabricante") == "MAGNETI MARELLI":
+            hw_str = bytes_binario[0x150:0x158].decode("ascii", errors="ignore").strip()
+            sw_str = bytes_binario[0x250:0x258].decode("ascii", errors="ignore").strip()
+            if hw_str: metadados["Hardware Nr."] = hw_str
+            if sw_str: metadados["Software Nr."] = sw_str
+
+    # --- 7. Família da Central / Planta ---
     familias = re.findall(r'\b(E80|E39|E78|E38|E92|E83|EDC17\w*|MD1\w*|MG1\w*|SIMOS\d*|ME7\w*|IAW\w*)\b', texto_completo, re.IGNORECASE)
     if familias:
         planta = familias[0].upper()
@@ -80,12 +109,26 @@ def extrair_metadados_binario(bytes_binario: bytes) -> dict:
             metadados["Protocolo"] = f"DELCO {planta} GEN2"
             if "Fabricante" not in metadados: metadados["Fabricante"] = "CHEVROLET US/EU/SAM"
 
-    # 5. Versão Hardware específica (ex: R1171650000000Z5)
+    # Versão Hardware específica (ex: R1171650000000Z5)
     hw_vers = re.findall(r'\bR117\w+|\b[A-Z]\d{12,16}[Z0-9]\b', texto_completo)
     if hw_vers:
         metadados["Versão Hardware"] = hw_vers[0]
 
     metadados["Número de identificação único"] = f"{sum(bytes_binario[:1000]):04X}{len(bytes_binario):08X}"
+    
+    # --- 8. INTEGRAÇÃO: Consulta de Modelo no Banco de Dados pelo Software Nr. ---
+    sw_id = metadados.get("Software Nr.")
+    if sw_id and sw_id != "N/A":
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            cursor.execute("SELECT veiculo FROM hex_history WHERE laudo LIKE ? LIMIT 1", (f"%{sw_id}%",))
+            row = cursor.fetchone()
+            if row and row[0]:
+                metadados["Modelo"] = row[0]
+        except Exception:
+            pass
+
     return metadados
 
 def processar_info_race(conteudo_texto: str) -> dict:
@@ -139,10 +182,9 @@ def renderizar_aba_info_race(metadados: dict):
         with st.container(border=True):
             st.markdown("#### 🚗 Dados do Veículo & Leitura")
             st.write(f"**Chassi (VIN):** `{metadados.get('Chassis', 'N/A')}`")
+            st.write(f"**Checksum MD5:** `{metadados.get('Checksum MD5', 'N/A')}`")
+            st.write(f"**Magic Bytes:** `{metadados.get('Magic Bytes (Hex)', 'N/A')}`")
             st.write(f"**Data da Leitura:** `{metadados.get('Data arquivo', datetime.now().strftime('%d/%m/%Y'))}`")
-            st.write(f"**Data Software:** `{metadados.get('Data Software', 'N/A')}`")
-            st.write(f"**Tipo Hardware:** `{metadados.get('Tipo hardware', 'N/A')}`")
-            st.write(f"**Código Cliente:** `{metadados.get('Código cliente', 'N/A')}`")
             st.write(f"**ID Único:** `{metadados.get('Número de identificação único', 'N/A')}`")
 
     with st.expander("🔍 Detalhes do Arquivo Parcial / Eprom"):
@@ -643,13 +685,11 @@ def render_hex_compare():
             df_matriz = pd.DataFrame(matriz_ativa, index=linhas_labels, columns=colunas_labels)
             
             if "Percentual" in modo_exibicao:
-                # Gradiente Divergente: Azul para valores negativos, Branco para zero, Vermelho para positivos
                 df_styled = df_matriz.style.format("{:+.2f}%").background_gradient(
                     cmap="vlag", vmin=-20.0, vmax=20.0
                 )
                 st.dataframe(df_styled, use_container_width=True, height=altura_dinamica)
             else:
-                # Gradiente Térmico de Calibração: Amarelo -> Laranja -> Vermelho (Vivid Thermal Heatmap)
                 fmt_str = "{:.0f}" if bits_val <= 16 and fator == 1.0 else "{:.2f}"
                 df_styled = df_matriz.style.format(fmt_str).background_gradient(
                     cmap="YlOrRd"
