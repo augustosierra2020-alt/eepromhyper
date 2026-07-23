@@ -289,7 +289,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # 2. Renderização do Popover e lógicas do Chip
-with st.popover("🤖 Chip"):
+with st.popover("🤖"):
     st.markdown("#### 💬 Chip Assistant")
     
     # Renderiza mensagens anteriores do chat
