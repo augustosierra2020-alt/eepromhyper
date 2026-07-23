@@ -6,3 +6,9 @@ __pycache__/
 *.obj
 .env
 build/
+# Ignora arquivos de dados locais para não sobrepor o servidor
+Logos/
+core/hypertork.db
+hypertork.db
+Fp.xlsx
+__pycache__/

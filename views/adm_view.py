@@ -23,6 +23,10 @@ def limpar_para_comparacao(texto):
 def renderizar_logo_harmonizada(caminho):
     if not caminho or not os.path.exists(caminho): return False
     try:
+        # TRAVA: Se o arquivo pesar menos de 500 bytes, é um ponteiro corrompido do Git, ignore!
+        if os.path.getsize(caminho) < 500:
+            return False
+            
         with open(caminho, "rb") as image_file: 
             encoded_string = base64.b64encode(image_file.read()).decode()
         st.markdown(f"""
