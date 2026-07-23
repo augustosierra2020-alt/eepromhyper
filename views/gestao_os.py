@@ -12,7 +12,6 @@ from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.shared import Pt, RGBColor
 
 BASE_DIR = os.path.abspath(os.path.dirname(os.path.dirname(__file__)))
-DIR_CLIENTES = os.path.join(BASE_DIR, "Clientes")
 
 # ==========================================
 # REGRAS ORIGINAIS DE ENGENHARIA AUTOMOTIVA
@@ -89,17 +88,18 @@ def modificar_modelo_docx(modelo_bytes, flash_point, cliente_nome, city, contato
 def render_gestao_os():
     st.title("📊 Gestão Estrutural & Ordens de Serviço (OS)")
     
-    # Inicializadores de Estado Protegidos para evitar perdas de clique
+    # Inicializadores de Estado Protegidos
     if "df_filtrado" not in st.session_state: st.session_state.df_filtrado = None
     if "os_mes_selecionado" not in st.session_state: st.session_state.os_mes_selecionado = ""
     if "os_cliente_selecionado" not in st.session_state: st.session_state.os_cliente_selecionado = ""
+    if "backup_cliente_sel" not in st.session_state: st.session_state.backup_cliente_sel = ""
 
-    # Usando 5 abas principais para evitar o erro de abas aninhadas no Streamlit
+    # Abas com o nome correto: "💾 Backup de Clientes"
     aba1, aba2, aba3_mensal, aba3_geral, aba4 = st.tabs([
         "📋 Processamento", 
         "📄 Gerar OS", 
         "📅 Histórico Mensal", 
-        "🗂️ Clientes Globais", 
+        "💾 Backup de Clientes", 
         "📊 Painel"
     ])
     
@@ -277,13 +277,13 @@ def render_gestao_os():
                 col_b2, col_t2 = st.columns([1, 4])
                 if col_b2.button("⬅️ Mudar Cliente", use_container_width=True): 
                     st.session_state.os_cliente_selecionado = ""; st.rerun()
-                col_t2.markdown(f"### 🗂️ Biblioteca Digital Unificada do Cliente: {st.session_state.os_cliente_selecionado}")
+                col_t2.markdown(f"### 🗂️ OS Salvas no Mês para: {st.session_state.os_cliente_selecionado}")
                 
-                cursor.execute("SELECT id, mes_ano, nome_arquivo, dados_bytes, valor_total FROM os_salvas WHERE fp_codigo = ? ORDER BY id DESC", (st.session_state.os_cliente_selecionado,))
+                # Exibe apenas os arquivos do MÊS SELECIONADO
+                cursor.execute("SELECT id, mes_ano, nome_arquivo, dados_bytes, valor_total FROM os_salvas WHERE fp_codigo = ? AND mes_ano = ? ORDER BY id DESC", (st.session_state.os_cliente_selecionado, st.session_state.os_mes_selecionado))
                 arquivos_cliente = cursor.fetchall()
                 
-                st.markdown("#### 📂 Arquivos da OS e Laudos Vinculados")
-                if not arquivos_cliente: st.info("Nenhum documento anexado ao histórico deste cliente.")
+                if not arquivos_cliente: st.info("Nenhum documento anexado ao histórico deste cliente neste mês.")
                 else:
                     for doc_id, doc_mes, doc_nome, doc_bytes, doc_val in arquivos_cliente:
                         with st.container(border=True):
@@ -297,72 +297,73 @@ def render_gestao_os():
                                 st.rerun()
 
                 st.markdown("---")
-                st.markdown("### Anexar Manualmente Documento Adicional ao Parceiro")
+                st.markdown("### Anexar Manualmente Documento Adicional ao Parceiro (Neste Mês)")
                 up_manual = st.file_uploader("Arraste ordens assinadas ou laudos mecânicos:", key="up_manual_shared")
-                col_m1, col_m2 = st.columns(2)
-                mes_m = col_m1.selectbox("Mês Alvo:", ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"], key="m_manual")
-                ano_m = col_m2.number_input("Ano Alvo:", value=datetime.now().year, step=1, key="a_manual")
                 val_m = st.number_input("Valor do Serviço Anexo (R$):", value=0.0, step=50.0)
                 
-                if st.button("💾 Inserir na Biblioteca Coletiva", use_container_width=True, type="primary"):
+                if st.button("💾 Inserir Documento", use_container_width=True, type="primary"):
                     if up_manual:
-                        cursor.execute("INSERT INTO os_salvas (fp_codigo, mes_ano, nome_arquivo, dados_bytes, valor_total) VALUES (?, ?, ?, ?, ?)", (st.session_state.os_cliente_selecionado, f"{mes_m} - {ano_m}", up_manual.name, up_manual.read(), float(val_m)))
+                        cursor.execute("INSERT INTO os_salvas (fp_codigo, mes_ano, nome_arquivo, dados_bytes, valor_total) VALUES (?, ?, ?, ?, ?)", (st.session_state.os_cliente_selecionado, st.session_state.os_mes_selecionado, up_manual.name, up_manual.read(), float(val_m)))
                         conn.commit()
                         backup_local_para_nuvem_async()
                         st.success("Documento injetado e sincronizado com a nuvem!"); st.rerun()
 
     # ====================================================
-    # ABA 4: VISÃO GLOBAL COMPARTILHADA (NOVA CENTRAL GERAL)
+    # ABA 4: BACKUP DE CLIENTES (PASTA VIVA E UNIFICADA DO BANCO)
     # ====================================================
     with aba3_geral:
-        st.subheader("🗂️ Repositório Global de Clientes Cadastrados")
-        st.caption("Acesso unificado a todas as pastas de clientes registradas no servidor HyperTork, independente do mês de entrada do serviço.")
+        st.subheader("💾 Backup de Clientes")
+        st.caption("Acesse diretamente a pasta viva e centralizada de cada cliente, contendo todo o histórico de serviços independente do mês.")
         
-        os.makedirs(DIR_CLIENTES, exist_ok=True)
+        # Puxa TODOS os clientes cadastrados no banco
+        cursor.execute("SELECT DISTINCT fp_codigo FROM os_salvas")
+        c_os_all = [r[0] for r in cursor.fetchall()]
+        cursor.execute("SELECT DISTINCT fp_codigo FROM clientes_fp")
+        c_fp_all = [r[0] for r in cursor.fetchall()]
         
-        with st.expander("➕ Inicializar Pasta Coletiva de Novo Cliente"):
-            nome_novo_cliente = st.text_input("Nome do Cliente (Razão Social ou Nome Completo):", placeholder="Ex: AUTO ELETRICA SERGIO").strip().upper()
-            if st.button("Criar Pasta Global", type="primary"):
-                if nome_novo_cliente:
-                    pasta_especifica = os.path.join(DIR_CLIENTES, nome_novo_cliente)
-                    if not os.path.exists(pasta_especifica):
-                        os.makedirs(pasta_especifica, exist_ok=True)
-                        st.success(f"📁 Pasta compartilhada de arquivos criada com sucesso para: {nome_novo_cliente}")
-                        backup_local_para_nuvem_async()
-                        st.rerun()
-                    else:
-                        st.error("❌ Cliente já possui pasta ativa no repositório global.")
-                else:
-                    st.warning("Preencha o nome do cliente.")
+        todos_clientes_com_os = sorted(list(set([str(c).strip().upper() for c in (c_os_all + c_fp_all) if c])))
         
-        st.markdown("##### 📁 Pastas de Clientes em Servidor")
-        pastas_gerais = [d for d in os.listdir(DIR_CLIENTES) if os.path.isdir(os.path.join(DIR_CLIENTES, d))]
-        
-        if not pastas_gerais:
-            st.info("Nenhuma pasta global de cliente gerada até o momento. Utilize o painel acima para registrar.")
+        if st.session_state.backup_cliente_sel == "":
+            st.markdown("### Selecione o cliente para acessar a pasta viva:")
+            if not todos_clientes_com_os:
+                st.info("Nenhum cliente possui arquivos de OS salvos no banco de dados ainda.")
+            else:
+                for i in range(0, len(todos_clientes_com_os), 4):
+                    cols_bc = st.columns(4)
+                    for j in range(4):
+                        if i + j < len(todos_clientes_com_os):
+                            cli = todos_clientes_com_os[i + j]
+                            with cols_bc[j]:
+                                with st.container(border=True):
+                                    st.markdown(f"<div style='display: flex; justify-content: center; align-items: center; height: 90px; width: 100%; margin-bottom: 10px; background: linear-gradient(135deg, #FF8C00 0%, #E65100 100%); border-radius: 12px;'><p style='text-align:center; font-weight:bold; color:#FFFFFF; margin:0; font-size: 1rem;'>👤 {cli}</p></div>", unsafe_allow_html=True)
+                                    if st.button(f"Abrir Pasta de {cli}", key=f"bkp_btn_{cli}", use_container_width=True):
+                                        st.session_state.backup_cliente_sel = cli
+                                        st.rerun()
         else:
-            for cliente_pasta in sorted(pastas_gerais):
-                caminho_cli = os.path.join(DIR_CLIENTES, cliente_pasta)
-                with st.expander(f"👤 CLIENTE: {cliente_pasta}"):
-                    st.markdown(f"**Caminho Físico:** `Root/Clientes/{cliente_pasta}`")
-                    
-                    arquivo_upload_cli = st.file_uploader(f"Anexar Arquivo Permanente (HEX, Imagens, PDFs) para {cliente_pasta}:", key=f"up_file_{cliente_pasta}")
-                    if st.button(f"Salvar Arquivo em {cliente_pasta}", key=f"btn_save_file_{cliente_pasta}"):
-                        if arquivo_upload_cli:
-                            with open(os.path.join(caminho_cli, arquivo_upload_cli.name), "wb") as f_cli:
-                                f_cli.write(arquivo_upload_cli.read())
-                            st.success(f"✅ Arquivo '{arquivo_upload_cli.name}' armazenado na pasta global do cliente!")
-                            backup_local_para_nuvem_async()
-                            time.sleep(0.3)
-                            st.rerun()
-                    
-                    arquivos_do_cliente = os.listdir(caminho_cli)
-                    if arquivos_do_cliente:
-                        st.markdown("**Arquivos em Nuvem:**")
-                        for arq in arquivos_do_cliente:
-                            st.text(f"📄 {arq}")
-                    else:
-                        st.caption("Nenhum arquivo anexado a este cliente.")
+            cli_atual = st.session_state.backup_cliente_sel
+            c1_bkp, c2_bkp = st.columns([1, 4])
+            if c1_bkp.button("⬅️ Voltar à Lista", type="primary"):
+                st.session_state.backup_cliente_sel = ""
+                st.rerun()
+            c2_bkp.markdown(f"## 📂 Pasta Unificada Viva: {cli_atual}")
+            st.markdown("---")
+            
+            # Puxa TODAS as OS salvas para esse cliente, SEM FILTRAR POR MÊS
+            cursor.execute("SELECT id, mes_ano, nome_arquivo, dados_bytes, valor_total FROM os_salvas WHERE fp_codigo = ? ORDER BY id DESC", (cli_atual,))
+            todo_historico_cliente = cursor.fetchall()
+            
+            st.markdown(f"#### Histórico Completo de Serviços Anexados ({len(todo_historico_cliente)} arquivo(s))")
+            if not todo_historico_cliente:
+                st.info("Nenhuma OS salva nesta pasta viva ainda.")
+            else:
+                for doc_id, doc_mes, doc_nome, doc_bytes, doc_val in todo_historico_cliente:
+                    with st.container(border=True):
+                        col_h1, col_h2, col_h3 = st.columns([4, 1, 1])
+                        col_h1.write(f"📄 **{doc_nome}** \n\n📅 Mês Referência: `{doc_mes}` | 💰 Faturamento: **R$ {doc_val:,.2f}**")
+                        col_h2.download_button("📥 Baixar", data=doc_bytes, file_name=doc_nome, mime="application/octet-stream", key=f"dl_bkp_{doc_id}", use_container_width=True)
+                        if col_h3.button("🗑️ Excluir", key=f"del_bkp_{doc_id}", use_container_width=True):
+                            cursor.execute("DELETE FROM os_salvas WHERE id = ?", (doc_id,))
+                            conn.commit(); backup_local_para_nuvem_async(); st.rerun()
 
     # ====================================================
     # ABA 5: MONITORAMENTO FINANCEIRO E AUDITORIA MENSAL

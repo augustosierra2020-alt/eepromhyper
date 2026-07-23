@@ -15,7 +15,33 @@ from views.adm_view import render_adm
 
 # Importação dos Serviços (Nuvem)
 from services.hf_sync import sincronizar_nuvem_para_local
+import streamlit as st
 
+# INJEÇÃO CSS GLOBAL: BOTÃO FLUTUANTE LARANJA DO CHIP
+st.markdown("""
+    <style>
+        /* Força o botão flutuante do Chip a ficar Laranja Premium e arredondado */
+        div[data-testid="stButton"] button {
+            background: linear-gradient(135deg, #FF8C00 0%, #E65100 100%) !important;
+            color: white !important;
+            border: none !important;
+            border-radius: 50px !important;
+            padding: 10px 25px !important;
+            font-weight: bold !important;
+            font-size: 16px !important;
+            box-shadow: 0 8px 20px rgba(230, 81, 0, 0.4) !important;
+            transition: all 0.3s ease !important;
+        }
+        div[data-testid="stButton"] button:hover {
+            transform: scale(1.05) !important;
+            box-shadow: 0 10px 25px rgba(230, 81, 0, 0.6) !important;
+        }
+    </style>
+""", unsafe_allow_html=True)
+
+# MENSAGEM INICIAL DO CHIP ASSISTANT ATUALIZADA
+if "mensagens_chip" not in st.session_state:
+    st.session_state.mensagens_chip = [{"role": "assistant", "content": "Oi, eu sou o Chip! Como posso ajudar?"}]
 # ==========================================
 # 1. CONFIGURAÇÃO DA PÁGINA E CSS VISUAL
 # ==========================================

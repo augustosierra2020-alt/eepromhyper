@@ -51,9 +51,6 @@ def render_adm():
         "📊 Estatísticas Globais"
     ])
     
-    # ==========================================
-    # ABA 1: INFRAESTRUTURA & PENTE FINO
-    # ==========================================
     with tab_infra:
         st.subheader("📋 Diagnóstico Técnico de Infraestrutura")
         st.write("Clique abaixo para invocar a auditoria interna do Chip no núcleo do sistema.")
@@ -118,9 +115,6 @@ def render_adm():
                 st.warning(analise_chip)
                 st.success("🏁 Pente fino concluído. Core operacional estruturado!")
 
-    # ==========================================
-    # ABA 2: REPOSITÓRIO FÍSICO DE LOGOS (Upload em Lote / Espera Automática)
-    # ==========================================
     with tab_logos:
         st.subheader("🖼️ Repositório de Logos de Montadoras (Upload em Lote)")
         st.write("Selecione uma ou várias fotos de logos simultaneamente. O sistema manterá em espera até que a montadora com nome correspondente seja criada.")
@@ -167,7 +161,7 @@ def render_adm():
                                 st.markdown(f"<p style='font-size:0.75rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;'><b>Arquivo:</b> {nome_arq}</p>", unsafe_allow_html=True)
                                 if st.button("🗑️ Eliminar", key=f"del_logo_adm_{idx+j}", use_container_width=True):
                                     try:
-                                        if os.path.exists(caminho_completo):  # Trava de segurança contra duplo-clique
+                                        if os.path.exists(caminho_completo):
                                             os.remove(caminho_completo)
                                             st.success("Removido")
                                             backup_local_para_nuvem_async()
@@ -176,9 +170,6 @@ def render_adm():
                                     except Exception as e:
                                         st.error(f"Erro: {e}")
 
-    # ==========================================
-    # ABA 3: ESTATÍSTICAS E VOLUMES
-    # ==========================================
     with tab_dados:
         st.subheader("📈 Volumes Cadastrados na Oficina")
         try:

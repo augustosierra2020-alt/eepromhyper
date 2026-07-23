@@ -27,13 +27,14 @@ def render_home():
 
     st.markdown("<h2 style='text-align: center; color: #1E88E5; margin-bottom: 30px; font-weight: 700;'>PAINEL DE CONTROLE OPERACIONAL</h2>", unsafe_allow_html=True)
 
-    # --- DASHBOARD DE ALTA PERFORMANCE (PLANILHA FP) ---
+    # --- DASHBOARD DE ALTA PERFORMANCE (PLANILHA FP - CLIENTES ÚNICOS) ---
     total_clientes = 0
     status_fp = "Aguardando Sincronização"
     try:
         if os.path.exists(CAMINHO_PLANILHA_FP):
             df_fp = pd.read_excel(CAMINHO_PLANILHA_FP)
-            total_clientes = len(df_fp)
+            col_cliente = "Flash Point" if "Flash Point" in df_fp.columns else df_fp.columns[0]
+            total_clientes = df_fp[col_cliente].nunique()  # Contagem de clientes únicos reais
             status_fp = "Online 🟢"
     except Exception:
         status_fp = "Erro de Leitura 🔴"
