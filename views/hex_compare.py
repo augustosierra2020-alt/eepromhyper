@@ -20,46 +20,105 @@ MAX_DIFFS = 3000
 GAP_THRESHOLD = 48
 
 # ==========================================
-# FUNÇÕES CORE: METADADOS RACE (DIMSPORT)
+# 1. FUNÇÕES CORE: EXTRAÇÃO DIRETA DO BINÁRIO & RACE
 # ==========================================
+def extrair_metadados_binario(bytes_binario: bytes) -> dict:
+    """
+    Realiza varredura analítica no binário (.ORI/.MOD) para extrair 
+    chassis (VIN), Part Numbers, família de ECU e códigos de calibração.
+    """
+    if not bytes_binario:
+        return {}
+    
+    metadados = {}
+    tam = len(bytes_binario)
+    metadados["Tamanho Eprom"] = f"0x{tam:08X} ({tam / (1024*1024):.1f} MB)"
+    metadados["Tamanho arquivo parcial"] = f"0x{tam:08X}"
+    metadados["Endereço inicial do arquivo parcial"] = "0x00000000"
+    
+    # Decodificação de sequências ASCII presentes no arquivo
+    strings_ascii = [s.decode('ascii', errors='ignore') for s in re.findall(b'[\x20-\x7E]{4,}', bytes_binario)]
+    texto_completo = " ".join(strings_ascii)
+    
+    # 1. VIN / Chassis (17 caracteres alfanuméricos ISO 3779)
+    vins = re.findall(r'\b[1-9A-HJ-NPR-Z0-9]{17}\b', texto_completo)
+    if vins:
+        metadados["Chassis"] = vins[0]
+        wmi = vins[0][:3]
+        if wmi.startswith(("9BG", "3G", "1G")): metadados["Fabricante"] = "CHEVROLET US/EU/SAM"
+        elif wmi.startswith(("9BD", "ZFA")): metadados["Fabricante"] = "FIAT"
+        elif wmi.startswith(("9BW", "WV")): metadados["Fabricante"] = "VOLKSWAGEN"
+        elif wmi.startswith(("9BF", "1FA")): metadados["Fabricante"] = "FORD"
+        elif wmi.startswith(("93H", "JHM")): metadados["Fabricante"] = "HONDA"
+        elif wmi.startswith(("9BR", "JT")): metadados["Fabricante"] = "TOYOTA"
+        elif wmi.startswith(("93Y", "VF3")): metadados["Fabricante"] = "PEUGEOT / CITROEN"
+        elif wmi.startswith(("98R", "KN")): metadados["Fabricante"] = "HYUNDAI / KIA"
+
+    # 2. Part Numbers GM Delco (8 dígitos numéricos: 12xxxxxx, 24xxxxxx, etc.)
+    pns_gm = list(dict.fromkeys(re.findall(r'\b(?:12|24|55|13|28|84|92)\d{6}\b', texto_completo)))
+    if pns_gm:
+        if len(pns_gm) >= 1: metadados["Software Nr."] = pns_gm[0]
+        if len(pns_gm) >= 2: metadados["Hardware Nr."] = pns_gm[1]
+        if len(pns_gm) >= 3: metadados["Software Upgrade Nr."] = pns_gm[2]
+        if "Fabricante" not in metadados: metadados["Fabricante"] = "CHEVROLET US/EU/SAM"
+
+    # 3. Números Bosch (1037xxxxxx / 0281xxxxxx / 0261xxxxxx)
+    pns_bosch_sw = re.findall(r'\b1037\d{6}\b', texto_completo)
+    pns_bosch_hw = re.findall(r'\b0281\d{6}\b|\b0261\d{6}\b', texto_completo)
+    if pns_bosch_sw and "Software Nr." not in metadados:
+        metadados["Software Nr."] = pns_bosch_sw[0]
+        if "Fabricante" not in metadados: metadados["Fabricante"] = "BOSCH"
+    if pns_bosch_hw and "Hardware Nr." not in metadados:
+        metadados["Hardware Nr."] = pns_bosch_hw[0]
+
+    # 4. Família da Central / Planta (E80, E39, E78, EDC17, MD1, etc.)
+    familias = re.findall(r'\b(E80|E39|E78|E38|E92|E83|EDC17\w*|MD1\w*|MG1\w*|SIMOS\d*|ME7\w*|IAW\w*)\b', texto_completo, re.IGNORECASE)
+    if familias:
+        planta = familias[0].upper()
+        metadados["Tipo planta"] = planta
+        if "E80" in planta or "E39" in planta or "E78" in planta:
+            metadados["Protocolo"] = f"DELCO {planta} GEN2"
+            if "Fabricante" not in metadados: metadados["Fabricante"] = "CHEVROLET US/EU/SAM"
+
+    # 5. Versão Hardware específica (ex: R1171650000000Z5)
+    hw_vers = re.findall(r'\bR117\w+|\b[A-Z]\d{12,16}[Z0-9]\b', texto_completo)
+    if hw_vers:
+        metadados["Versão Hardware"] = hw_vers[0]
+
+    metadados["Número de identificação único"] = f"{sum(bytes_binario[:1000]):04X}{len(bytes_binario):08X}"
+    return metadados
+
 def processar_info_race(conteudo_texto: str) -> dict:
-    """Lê o texto gerado pelo Dimsport Race e extrai os metadados."""
+    """Lê o texto gerado pelo Dimsport Race (.txt opcional)."""
     metadados = {}
     linhas = conteudo_texto.splitlines()
-    
     for linha in linhas:
         linha = linha.strip()
-        if not linha:
-            continue
-            
+        if not linha: continue
         if "Parcial:" in linha and ":" in linha:
             partes = linha.split(":")
-            if len(partes) >= 2:
-                metadados["Tipo Leitura"] = partes[-1].strip()
+            if len(partes) >= 2: metadados["Tipo Leitura"] = partes[-1].strip()
             continue
-
         if ":" in linha:
             chave, valor = linha.split(":", 1)
             chave = chave.strip()
             valor = valor.strip()
-            if valor:
-                metadados[chave] = valor
-                
+            if valor: metadados[chave] = valor
     return metadados
 
 def renderizar_aba_info_race(metadados: dict):
-    """Renderiza o painel visual com metadados do arquivo .TXT da ECU."""
+    """Renderiza o painel visual com os dados extraídos da ECU."""
     if not metadados:
-        st.info("ℹ️ Nenhum arquivo de metadados do Race (.txt) foi anexado para esta análise.")
+        st.info("ℹ️ Carregue um arquivo .ORI para visualizar a leitura automática dos metadados da ECU.")
         return
 
-    st.markdown("### 📋 Metadados e Informações do Arquivo ECU (Race)")
+    st.markdown("### 📋 Metadados e Informações do Arquivo ECU")
     
     col1, col2, col3 = st.columns(3)
     with col1:
         st.metric("Fabricante", metadados.get("Fabricante", "N/A"))
     with col2:
-        st.metric("Modelo / Veículo", metadados.get("Modelo", "N/A"))
+        st.metric("Modelo / Veículo", metadados.get("Modelo", metadados.get("Tipo", "N/A")))
     with col3:
         st.metric("Hardware ECU", metadados.get("Tipo planta", metadados.get("Hardware Nr.", "N/A")))
 
@@ -80,19 +139,19 @@ def renderizar_aba_info_race(metadados: dict):
         with st.container(border=True):
             st.markdown("#### 🚗 Dados do Veículo & Leitura")
             st.write(f"**Chassi (VIN):** `{metadados.get('Chassis', 'N/A')}`")
-            st.write(f"**Data da Leitura:** `{metadados.get('Data arquivo', 'N/A')} - {metadados.get('Hora arquivo', 'N/A')}`")
+            st.write(f"**Data da Leitura:** `{metadados.get('Data arquivo', datetime.now().strftime('%d/%m/%Y'))}`")
             st.write(f"**Data Software:** `{metadados.get('Data Software', 'N/A')}`")
             st.write(f"**Tipo Hardware:** `{metadados.get('Tipo hardware', 'N/A')}`")
             st.write(f"**Código Cliente:** `{metadados.get('Código cliente', 'N/A')}`")
             st.write(f"**ID Único:** `{metadados.get('Número de identificação único', 'N/A')}`")
 
     with st.expander("🔍 Detalhes do Arquivo Parcial / Eprom"):
-        st.write(f"**Endereço Inicial:** `{metadados.get('Endereço inicial do arquivo parcial', 'N/A')}`")
+        st.write(f"**Endereço Inicial:** `{metadados.get('Endereço inicial do arquivo parcial', '0x00000000')}`")
         st.write(f"**Tamanho Parcial:** `{metadados.get('Tamanho arquivo parcial', 'N/A')}`")
         st.write(f"**Tamanho Eprom:** `{metadados.get('Tamanho Eprom', 'N/A')}`")
 
 # ==========================================
-# FUNÇÕES CORE: ENGENHARIA REVERSA 
+# 2. FUNÇÕES CORE: ENGENHARIA REVERSA 
 # ==========================================
 def processar_bytes_para_valores(bytes_crus, bits=16, signed=False, endian='big'):
     if not bytes_crus: return np.array([])
@@ -159,7 +218,7 @@ def obter_classificacao_heuristica(dados):
     if has_mod and has_off: return "STG 2"
     elif has_mod: return "MOD"
     elif has_off: return "OFF"
-    return "Não Identificado"
+    return None
 
 def formatar_resumo_ia(blocos):
     resumo_ia = ""
@@ -170,9 +229,8 @@ def formatar_resumo_ia(blocos):
     return resumo_ia
 
 def analisar_remap_com_ia(resumo_blocos, info_veiculo, classificacao):
-    # REGRA DE SEGURANÇA: Exibe classificação estritamente se houver certeza absoluta
-    linha_classificacao = f"\nAssinatura do Firmware / Classificação: **{classificacao}**" if classificacao in ["MOD", "OFF", "STG 2", "STAGE 2", "STAG 2"] else ""
-    return f"🛠️ **Laudo Técnico Preliminar de Calibração (Chip Engine):**\n\nIdentificação da ECU: {info_veiculo}{linha_classificacao}\n\nEstrutura Topológica das Modificações:\n{resumo_blocos}"
+    linha_classif = f"\nAssinatura do Firmware / Classificação: **{classificacao}**" if classificacao in ["MOD", "OFF", "STG 2", "STAGE 2"] else ""
+    return f"🛠️ **Laudo Técnico Preliminar de Calibração (Chip Engine):**\n\nIdentificação da ECU: {info_veiculo}{linha_classif}\n\nEstrutura Topológica das Modificações:\n{resumo_blocos}"
 
 def obter_checksum_arquivo(dados_bytes):
     if not dados_bytes: return 0
@@ -209,15 +267,13 @@ def carregar_arquivos_hex_por_id(hist_id: int):
     return None, None, None, None
 
 # ==========================================
-# RENDERIZADOR DA VIEW PRINCIPAL
+# 3. RENDERIZAÇÃO DA VIEW PRINCIPAL
 # ==========================================
 def render_hex_compare():
     if "zoom_janela" not in st.session_state: st.session_state.zoom_janela = 256
     if "view_addr_atual" not in st.session_state: st.session_state.view_addr_atual = 0
 
-    # ----------------------------------------------------
     # MODO TELA CHEIA 2D
-    # ----------------------------------------------------
     if st.session_state.get('focus_mode') == '2D' and st.session_state.get('hex_atual'):
         dados = st.session_state.hex_atual
         st.title("🔍 Modo Expandido Total - Mapa 2D")
@@ -263,9 +319,7 @@ def render_hex_compare():
         st.plotly_chart(fig_2d_fs, use_container_width=True, config={'scrollZoom': True, 'displayModeBar': True})
         st.stop()
 
-    # ----------------------------------------------------
     # MODO TELA CHEIA 3D
-    # ----------------------------------------------------
     if st.session_state.get('focus_mode') == '3D' and st.session_state.get('hex_atual'):
         dados = st.session_state.hex_atual
         st.title("📐 Modo Expandido Total - Mapa 3D")
@@ -318,11 +372,9 @@ def render_hex_compare():
         st.plotly_chart(fig_3d, use_container_width=True, config={'displayModeBar': True, 'scrollZoom': True, 'displaylogo': False})
         st.stop()
 
-    # ----------------------------------------------------
-    # WORKSPACE PADRÃO DO ESTÚDIO
-    # ----------------------------------------------------
+    # WORKSPACE PRINCIPAL
     st.title("🛠️ Estúdio Avançado de Calibração")
-    st.markdown("Engine unificada de alta performance com análise geométrica 3D, sombreamento delta 2D e grade de engenharia térmica.")
+    st.markdown("Engine unificada de alta performance com análise geométrica 3D, leitura direta de metadados ECU e grade térmica.")
 
     historico_global = carregar_historico_hex_geral()
     if historico_global:
@@ -337,7 +389,8 @@ def render_hex_compare():
                         if ori_b and mod_b:
                             diffs, len1, len2 = comparar_arquivos_hex(ori_b, mod_b)
                             blocos = obter_blocos_diferencas(diffs)
-                            st.session_state.hex_atual = {"timestamp": h_data, "veiculo": veic_b, "len1": len1, "len2": len2, "diffs": diffs, "blocos": blocos, "laudo": laudo_b, "bytes_orig": ori_b, "bytes_mod": mod_b, "salvo": True, "metadados_race": {}}
+                            metadados_auto = extrair_metadados_binario(ori_b)
+                            st.session_state.hex_atual = {"timestamp": h_data, "veiculo": veic_b, "len1": len1, "len2": len2, "diffs": diffs, "blocos": blocos, "laudo": laudo_b, "bytes_orig": ori_b, "bytes_mod": mod_b, "salvo": True, "metadados_race": metadados_auto}
                             st.session_state.view_addr_atual = max(0, blocos[0]['inicio'] - 100) if blocos else 0
                             st.rerun()
 
@@ -345,28 +398,32 @@ def render_hex_compare():
         col1, col2, col3 = st.columns(3)
         with col1: arq_original = st.file_uploader("📂 Arquivo Original (.ori, .bin, .hex)", type=["bin", "hex", "ori", "mod", "dat"])
         with col2: arq_modificado = st.file_uploader("📂 Arquivo Modificado (.mod, .bin, .hex)", type=["bin", "hex", "ori", "mod", "dat"])
-        with col3: arq_race_txt = st.file_uploader("📋 Info Race (.txt - Metadados)", type=["txt"])
+        with col3: arq_race_txt = st.file_uploader("📋 Info Race (.txt Opcional)", type=["txt"])
         
-        info_veiculo = st.text_input("🚙 Qual o veículo/ECU?", placeholder="Ex: Bosch MD1CS001 / Siemens SID208")
+        info_veiculo = st.text_input("🚙 Identificação/Modelo da ECU (Opcional)", placeholder="Ex: Chevrolet S10 2.5 Flex Delco E80")
         
         if st.button("🚀 Iniciar Engenharia Reversa", use_container_width=True, type="primary"):
             if arq_original and arq_modificado:
-                with st.spinner("Comparando matrizes binárias..."):
+                with st.spinner("Analisando matrizes e extraindo metadados da ECU..."):
                     bytes_orig = arq_original.read()
                     bytes_mod = arq_modificado.read()
                     
-                    metadados_race = {}
+                    # Extração automática dos metadados direto do arquivo .ORI
+                    metadados_finais = extrair_metadados_binario(bytes_orig)
+                    
+                    # Se houver um arquivo .txt opcional, mescla enriquecendo os dados
                     if arq_race_txt:
                         try:
                             str_txt = arq_race_txt.read().decode("utf-8", errors="ignore")
-                            metadados_race = processar_info_race(str_txt)
+                            metadados_txt = processar_info_race(str_txt)
+                            metadados_finais.update(metadados_txt)
                         except Exception: pass
                         
                     nome_veiculo_final = info_veiculo
-                    if not nome_veiculo_final and metadados_race:
-                        nome_veiculo_final = f"{metadados_race.get('Fabricante', '')} {metadados_race.get('Modelo', '')}".strip()
                     if not nome_veiculo_final:
-                        nome_veiculo_final = "ECU Não Identificada"
+                        fab = metadados_finais.get('Fabricante', '')
+                        mod = metadados_finais.get('Modelo', metadados_finais.get('Tipo planta', 'ECU'))
+                        nome_veiculo_final = f"{fab} {mod}".strip() if fab or mod else "ECU Não Identificada"
 
                     diffs, len1, len2 = comparar_arquivos_hex(bytes_orig, bytes_mod)
                     if diffs:
@@ -386,7 +443,7 @@ def render_hex_compare():
                             "bytes_orig": bytes_orig, 
                             "bytes_mod": bytes_mod, 
                             "salvo": False,
-                            "metadados_race": metadados_race
+                            "metadados_race": metadados_finais
                         }
                         st.session_state.view_addr_atual = max(0, blocos_encontrados[0]['inicio'] - 100) if blocos_encontrados else 0
                         st.rerun() 
@@ -501,12 +558,11 @@ def render_hex_compare():
         matriz_mod_eng = valores_mod_eng.reshape((linhas, colunas))
         matriz_delta_pct = valores_delta_pct.reshape((linhas, colunas))
 
-        # Estrutura de Abas com a integração de Metadados da ECU
         tab_2d, tab_3d, tab_grid, tab_race_info = st.tabs([
             "📈 Gráfico 2D (Contínuo com Minimapa)", 
             "📐 Superfície 3D (Topografia)", 
             "🧮 Grade Térmica (Hex Dump)",
-            "ℹ️ Metadados ECU (Race Info)"
+            "ℹ️ Metadados ECU (Leitura Direta)"
         ])
 
         with tab_2d:
@@ -576,18 +632,29 @@ def render_hex_compare():
                 st.session_state.focus_mode = '3D'
                 st.rerun()
 
+        # ----------------------------------------------------
+        # GRADE TÉRMICA COM COLORIMETRIA GRADIENTE (HEATMAP)
+        # ----------------------------------------------------
         with tab_grid:
-            st.markdown("##### Matriz de Dados (Células da ECU)")
+            st.markdown("##### 🧮 Grade Térmica de Engenharia (Hex Dump)")
             matriz_ativa = matriz_delta_pct if "Percentual" in modo_exibicao else matriz_mod_eng
             colunas_labels = [f"Col {j+1}" for j in range(colunas)]
             linhas_labels = [f"0x{addr_inicio + (i * colunas * b_step):06X}" for i in range(linhas)]
             df_matriz = pd.DataFrame(matriz_ativa, index=linhas_labels, columns=colunas_labels)
             
             if "Percentual" in modo_exibicao:
-                df_formatado = df_matriz.map(lambda x: f"{x:+.2f}%")
-                st.dataframe(df_formatado, use_container_width=True, height=altura_dinamica)
+                # Gradiente Divergente: Azul para valores negativos, Branco para zero, Vermelho para positivos
+                df_styled = df_matriz.style.format("{:+.2f}%").background_gradient(
+                    cmap="vlag", vmin=-20.0, vmax=20.0
+                )
+                st.dataframe(df_styled, use_container_width=True, height=altura_dinamica)
             else:
-                st.dataframe(df_matriz, use_container_width=True, height=altura_dinamica)
+                # Gradiente Térmico de Calibração: Amarelo -> Laranja -> Vermelho (Vivid Thermal Heatmap)
+                fmt_str = "{:.0f}" if bits_val <= 16 and fator == 1.0 else "{:.2f}"
+                df_styled = df_matriz.style.format(fmt_str).background_gradient(
+                    cmap="YlOrRd"
+                )
+                st.dataframe(df_styled, use_container_width=True, height=altura_dinamica)
 
         with tab_race_info:
             renderizar_aba_info_race(dados.get('metadados_race', {}))
