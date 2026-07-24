@@ -3,9 +3,20 @@ import json
 import re
 import time
 import urllib.parse
-from core.db import init_db
 
-# Importação dos Módulos/Telas (Views)
+# 1. Configuração da Página (Deve ser o primeiro comando Streamlit)
+st.set_page_config(
+    page_title="HyperTork System Hub",
+    page_icon="⚙️",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
+# Importação do Banco de Dados e Serviços
+from core.db import init_db
+from services.hf_sync import sincronizar_nuvem_para_local
+
+# Importação dos Módulos / Telas (Views)
 from views.home import render_home
 from views.hex_compare import render_hex_compare
 from views.eeprom_view import render_eeprom
@@ -13,56 +24,45 @@ from views.gestao_os import render_gestao_os
 from views.obd2_view import render_obd2
 from views.adm_view import render_adm
 
-# Importação dos Serviços (Nuvem)
-from services.hf_sync import sincronizar_nuvem_para_local
-import streamlit as st
-
-# INJEÇÃO CSS GLOBAL: BOTÃO FLUTUANTE LARANJA DO CHIP
+# ==========================================
+# 1. INJEÇÃO CSS GLOBAL (HUB & CHIP ASSISTANT)
+# ==========================================
 st.markdown("""
     <style>
-        /* Força o botão flutuante do Chip a ficar Laranja Premium e arredondado */
-        div[data-testid="stButton"] button {
-            background: linear-gradient(135deg, #FF8C00 0%, #E65100 100%) !important;
-            color: white !important;
-            border: none !important;
-            border-radius: 50px !important;
-            padding: 10px 25px !important;
-            font-weight: bold !important;
-            font-size: 16px !important;
-            box-shadow: 0 8px 20px rgba(230, 81, 0, 0.4) !important;
-            transition: all 0.3s ease !important;
-        }
-        div[data-testid="stButton"] button:hover {
-            transform: scale(1.05) !important;
-            box-shadow: 0 10px 25px rgba(230, 81, 0, 0.6) !important;
-        }
-    </style>
-""", unsafe_allow_html=True)
-
-# MENSAGEM INICIAL DO CHIP ASSISTANT ATUALIZADA
-if "mensagens_chip" not in st.session_state:
-    st.session_state.mensagens_chip = [{"role": "assistant", "content": "Oi, eu sou o Chip! Como posso ajudar?"}]
-# ==========================================
-# 1. CONFIGURAÇÃO DA PÁGINA E CSS VISUAL
-# ==========================================
-st.set_page_config(page_title="HyperTork System Hub", page_icon="⚙️", layout="wide")
-
-st.markdown("""
-    <style>
-    html, body, [class*="css"]  { overflow-x: hidden; }
+    /* Estilização Geral e Responsividade */
+    html, body, [class*="css"] { overflow-x: hidden; }
     .block-container { padding-top: 2rem; max-width: 1200px; }
     
+    /* Botões Grandes do Hub Principal */
     .big-hub-btn-link { text-decoration: none !important; display: block !important; width: 100% !important; }
-    .big-hub-btn { display: flex !important; flex-direction: column !important; align-items: center !important; justify-content: center !important; height: 160px !important; padding: 20px !important; border-radius: 20px !important; box-shadow: 0 8px 20px rgba(0,0,0,0.2) !important; transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1) !important; text-align: center !important; margin-bottom: 25px !important; border: 1px solid rgba(255,255,255,0.05); backdrop-filter: blur(8px); }
+    .big-hub-btn { 
+        display: flex !important; 
+        flex-direction: column !important; 
+        align-items: center !important; 
+        justify-content: center !important; 
+        height: 160px !important; 
+        padding: 20px !important; 
+        border-radius: 20px !important; 
+        box-shadow: 0 8px 20px rgba(0,0,0,0.2) !important; 
+        transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1) !important; 
+        text-align: center !important; 
+        margin-bottom: 25px !important; 
+        border: 1px solid rgba(255,255,255,0.05); 
+        backdrop-filter: blur(8px); 
+    }
     .btn-blue { background: linear-gradient(135deg, #1976D2 0%, #0D47A1 100%) !important; }
     .btn-red { background: linear-gradient(135deg, #D32F2F 0%, #B71C1C 100%) !important; }
     .btn-green { background: linear-gradient(135deg, #388E3C 0%, #1B5E20 100%) !important; }
     .btn-purple { background: linear-gradient(135deg, #8E24AA 0%, #4A148C 100%) !important; }
-    .big-hub-btn:hover { transform: translateY(-8px) scale(1.02) !important; box-shadow: 0 15px 30px rgba(0,0,0,0.4) !important; border: 1px solid rgba(255,255,255,0.2); }
+    .big-hub-btn:hover { 
+        transform: translateY(-8px) scale(1.02) !important; 
+        box-shadow: 0 15px 30px rgba(0,0,0,0.4) !important; 
+        border: 1px solid rgba(255,255,255,0.2); 
+    }
     .big-hub-btn .emoji-icon { font-size: 3.5rem !important; line-height: 1 !important; margin-bottom: 12px !important; filter: drop-shadow(0px 4px 4px rgba(0,0,0,0.3)); }
     .big-hub-btn h2 { color: #FFFFFF !important; margin: 0 !important; font-weight: 700 !important; font-size: 1.25rem !important; letter-spacing: 0.5px !important; text-transform: uppercase; text-shadow: 0px 2px 4px rgba(0,0,0,0.5); }
     
-    /* === LOGO VISUAL === */
+    /* Logo e Elementos de Interface */
     .locked-main-logo { 
         max-height: 280px !important; 
         width: auto !important; 
@@ -73,11 +73,9 @@ st.markdown("""
         filter: drop-shadow(0px 12px 24px rgba(0,0,0,0.25)) !important; 
         transition: transform 0.3s ease !important;
     }
-    .locked-main-logo:hover {
-        transform: scale(1.03) !important;
-    }
+    .locked-main-logo:hover { transform: scale(1.03) !important; }
     
-    /* === SLIDER ROXO E INPUTS === */
+    /* Sliders e Inputs Customizados */
     .stSlider > div[data-baseweb="slider"] [data-testid="stTickBar"] + div,
     .stSlider > div[data-baseweb="slider"] [role="slider"] { background-color: #9C27B0 !important; border-color: #9C27B0 !important; }
     div.stSlider > div[data-baseweb="slider"] > div > div > div { background-color: #9C27B0 !important; }
@@ -90,48 +88,35 @@ st.markdown("""
     div[data-testid="stTabBar"] button { font-weight: 600 !important; letter-spacing: 0.5px !important; text-transform: uppercase !important; font-size: 0.85rem !important; padding: 10px 20px !important; transition: all 0.2s ease !important; }
     div[data-testid="stTabBar"] button[aria-selected="true"] { color: #1E88E5 !important; border-bottom-color: #1E88E5 !important; }
     
-    /* === DESIGN DO CHIP POP-UP EM LARANJA GRADIENTE PREMIUM === */
-    div[data-testid="stPopover"] { 
-        position: fixed !important; 
-        bottom: 30px !important; 
-        right: 30px !important; 
-        z-index: 999999 !important; 
-        max-width: 75px !important;
-        width: 75px !important;
-        height: 75px !important;
+    /* Botão Flutuante do Assistente Chip (Popover Laranja Premium) */
+    div[data-testid="stPopover"] {
+        position: fixed !important;
+        bottom: 30px !important;
+        right: 30px !important;
+        z-index: 999999 !important;
     }
-    
-    div[data-testid="stPopover"] > button { 
-        background: linear-gradient(135deg, #FF8C00 0%, #FF4500 100%) !important; 
-        color: white !important; 
-        border: 3px solid rgba(255, 255, 255, 0.8) !important; 
-        border-radius: 50% !important; 
-        width: 75px !important; 
-        height: 75px !important; 
-        min-width: 75px !important; 
-        max-width: 75px !important;
-        box-shadow: 0 10px 25px rgba(255, 69, 0, 0.6), inset 0 -4px 10px rgba(0,0,0,0.15) !important; 
-        padding: 0 !important;
-        display: flex !important;
-        align-items: center !important;
-        justify-content: center !important;
-        transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1) !important;
+    div[data-testid="stPopover"] button {
+        background: linear-gradient(135deg, #FF8C00 0%, #E65100 100%) !important;
+        background-color: #FF8C00 !important;
+        color: #FFFFFF !important;
+        border: 2px solid #E65100 !important;
+        border-radius: 50px !important;
+        padding: 12px 28px !important;
+        box-shadow: 0 8px 25px rgba(230, 81, 0, 0.6) !important;
+        transition: all 0.3s ease !important;
     }
-    
-    div[data-testid="stPopover"] > button:hover {
-        transform: translateY(-5px) scale(1.1) !important;
-        box-shadow: 0 15px 35px rgba(255, 69, 0, 0.8), inset 0 -4px 10px rgba(0,0,0,0.2) !important;
+    div[data-testid="stPopover"] button p, 
+    div[data-testid="stPopover"] button span,
+    div[data-testid="stPopover"] button div {
+        color: #FFFFFF !important;
+        font-weight: 900 !important;
+        font-size: 18px !important;
+        margin: 0 !important;
+    }
+    div[data-testid="stPopover"] button:hover {
+        transform: scale(1.1) translateY(-4px) !important;
+        box-shadow: 0 12px 30px rgba(230, 81, 0, 0.9) !important;
         border-color: #FFFFFF !important;
-    }
-    
-    div[data-testid="stPopover"] > button p { 
-        font-size: 34px !important; 
-        margin: 0 !important; 
-        line-height: 1 !important;
-        display: flex !important;
-        align-items: center !important;
-        justify-content: center !important;
-        filter: drop-shadow(0px 2px 2px rgba(0,0,0,0.3));
     }
     </style>
 """, unsafe_allow_html=True)
@@ -140,16 +125,16 @@ st.markdown("""
 # 2. INICIALIZAÇÃO DE ESTADOS E PROTEÇÕES
 # ==========================================
 if "startup_ok" not in st.session_state:
-    # 1º Baixa o banco da nuvem para garantir que as tabelas locais estejam atualizadas
-    sincronizar_nuvem_para_local()  
-    # 2º Inicializa o pool de conexões com segurança
-    init_db()                       
+    sincronizar_nuvem_para_local()  # Baixa o banco da nuvem para atualizar tabelas locais
+    init_db()                       # Inicializa o banco SQLite
     st.session_state.startup_ok = True
     st.session_state.app_mode = "HOME"
     st.session_state.adm_logged_in = False
-    st.session_state.chat_historico = [{"role": "assistant", "content": "Olá chefe! Sou o Chip. Como posso ajudar na oficina hoje?"}]
+    st.session_state.chat_historico = [
+        {"role": "assistant", "content": "Oi, eu sou o Chip! Como posso ajudar na oficina hoje?"}
+    ]
 
-# Inicialização de variáveis de controle para as views
+# Variáveis Globais de Controle de Sessão
 if 'montadora_selecionada' not in st.session_state: st.session_state.montadora_selecionada = ""
 if 'escolha_modelo' not in st.session_state: st.session_state.escolha_modelo = ""
 if 'hex_atual' not in st.session_state: st.session_state.hex_atual = None
@@ -157,7 +142,7 @@ if 'view_addr_atual' not in st.session_state: st.session_state.view_addr_atual =
 if 'focus_mode' not in st.session_state: st.session_state.focus_mode = None
 if 'zoom_janela' not in st.session_state: st.session_state.zoom_janela = 256
 
-# Captura redirecionamentos via query params (Cliques rápidos)
+# Captura redirecionamentos via URL query parameters
 params = st.query_params
 if "page" in params:
     st.session_state.app_mode = params["page"]
@@ -199,12 +184,17 @@ if st.session_state.app_mode != "HOME":
 else:
     st.sidebar.info("📌 Escolha uma das ferramentas abaixo ou no painel principal.")
 
-# Botões de Navegação
-if st.sidebar.button("🏠 Home / Dashboard", use_container_width=True): st.session_state.app_mode = "HOME"; st.rerun()
-if st.sidebar.button("🛠️ HEX Studio", use_container_width=True): st.session_state.app_mode = "HEX_COMPARE"; st.rerun()
-if st.sidebar.button("⚙️ EEPROM Maps", use_container_width=True): st.session_state.app_mode = "EEPROM"; st.rerun()
-if st.sidebar.button("📊 Gestão & OS Lote", use_container_width=True): st.session_state.app_mode = "GESTAO_OS"; st.rerun()
-if st.sidebar.button("🚗 Códigos de Falha OBD2", use_container_width=True): st.session_state.app_mode = "OBD2"; st.rerun()
+# Botões de Navegação Direta
+if st.sidebar.button("🏠 Home / Dashboard", use_container_width=True): 
+    st.session_state.app_mode = "HOME"; st.rerun()
+if st.sidebar.button("🛠️ HEX Studio", use_container_width=True): 
+    st.session_state.app_mode = "HEX_COMPARE"; st.rerun()
+if st.sidebar.button("⚙️ EEPROM Maps", use_container_width=True): 
+    st.session_state.app_mode = "EEPROM"; st.rerun()
+if st.sidebar.button("📊 Gestão & OS Lote", use_container_width=True): 
+    st.session_state.app_mode = "GESTAO_OS"; st.rerun()
+if st.sidebar.button("🚗 Códigos de Falha OBD2", use_container_width=True): 
+    st.session_state.app_mode = "OBD2"; st.rerun()
 
 st.sidebar.markdown("---")
 if st.sidebar.button("🔑 Adm Room", use_container_width=True):
@@ -243,71 +233,24 @@ else:
 # ==========================================
 # 6. CENTRAL ASSISTENTE CHIP (POP-UP FLUTUANTE)
 # ==========================================
-
-import streamlit as st
-
-# --- INJEÇÃO CSS GLOBAL: MODO FORÇA BRUTA PARA O BOTÃO FLUTUANTE ---
-st.markdown("""
-    <style>
-        /* 1. Caça o contêiner do Popover e joga ele para fora da tela comum (Flutuante) */
-        div[data-testid="stPopover"] {
-            position: fixed !important;
-            bottom: 30px !important;
-            right: 30px !important;
-            z-index: 999999 !important;
-        }
-
-        /* 2. Caça QUALQUER botão dentro do Popover (sem restrição de nível) e aplica o Laranja */
-        div[data-testid="stPopover"] button {
-            background: linear-gradient(135deg, #FF8C00 0%, #E65100 100%) !important;
-            background-color: #FF8C00 !important; /* Fallback de cor sólida */
-            color: #FFFFFF !important;
-            border: 2px solid #E65100 !important;
-            border-radius: 50px !important;
-            padding: 12px 28px !important;
-            box-shadow: 0 8px 25px rgba(230, 81, 0, 0.6) !important;
-            transition: all 0.3s ease !important;
-        }
-
-        /* 3. Força a cor do texto e do ícone do botão para branco puro */
-        div[data-testid="stPopover"] button p, 
-        div[data-testid="stPopover"] button span,
-        div[data-testid="stPopover"] button div {
-            color: #FFFFFF !important;
-            font-weight: 900 !important;
-            font-size: 18px !important;
-            margin: 0 !important;
-        }
-
-        /* 4. Efeito de Hover (passar o mouse) agressivo */
-        div[data-testid="stPopover"] button:hover {
-            transform: scale(1.1) translateY(-4px) !important;
-            box-shadow: 0 12px 30px rgba(230, 81, 0, 0.9) !important;
-            border-color: #FFFFFF !important;
-        }
-    </style>
-""", unsafe_allow_html=True)
-
-# 2. Renderização do Popover e lógicas do Chip
 with st.popover("🤖"):
     st.markdown("#### 💬 Chip Assistant")
     
-    # Renderiza mensagens anteriores do chat
+    # Histórico de Conversas
     for msg in st.session_state.chat_historico:
         if msg["role"] != "system":
             with st.chat_message(msg["role"]): 
                 st.markdown(msg["content"])
                 
-    # Interface de entrada nativa do chat
+    # Entrada de Chat
     prompt = st.chat_input("Diga um código DTC ou pergunte algo...")
     if prompt:
         st.session_state.chat_historico.append({"role": "user", "content": prompt})
         
-        # Inteligência Rápida de Resposta
+        # Heurística Rápida de Resposta do Chip
         if any(c.isdigit() for c in prompt) and "P" in prompt.upper():
             resp = f"🔧 **Análise de Diagnóstico ({prompt.upper()}):** Detectei que este código refere-se a uma anomalia de injeção ou falha em sensor. Recomendo cruzar os dados na aba OBD2 para uma pesquisa aprofundada na web."
         else:
-            # Mensagem atualizada conforme sua preferência
             resp = "Oi, eu sou o Chip! Como posso ajudar?"
         
         st.session_state.chat_historico.append({"role": "assistant", "content": resp})

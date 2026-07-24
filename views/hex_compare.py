@@ -38,10 +38,10 @@ def extrair_metadados_binario(bytes_binario: bytes) -> dict:
     metadados["Tamanho arquivo parcial"] = f"0x{tam:08X}"
     metadados["Endereço inicial do arquivo parcial"] = "0x00000000"
     
-    # 1. Checksum MD5 (Assinatura Criptográfica Única)
+    # 1. Checksum MD5
     metadados["Checksum MD5"] = hashlib.md5(bytes_binario).hexdigest().upper()
     
-    # 2. Magic Bytes (Assinatura de Cabeçalho dos Primeiros Bytes)
+    # 2. Magic Bytes
     header_bytes = bytes_binario[:16]
     metadados["Magic Bytes (Hex)"] = header_bytes[:4].hex().upper()
     
@@ -52,11 +52,10 @@ def extrair_metadados_binario(bytes_binario: bytes) -> dict:
     elif b"DELCO" in header_bytes or b"GM" in header_bytes:
         metadados["Fabricante"] = "CHEVROLET / DELCO"
 
-    # Decodificação de sequências ASCII presentes no arquivo
     strings_ascii = [s.decode('ascii', errors='ignore') for s in re.findall(b'[\x20-\x7E]{4,}', bytes_binario)]
     texto_completo = " ".join(strings_ascii)
     
-    # 3. VIN / Chassis (17 caracteres alfanuméricos ISO 3779)
+    # 3. VIN / Chassis
     vins = re.findall(r'\b[1-9A-HJ-NPR-Z0-9]{17}\b', texto_completo)
     if vins:
         metadados["Chassis"] = vins[0]
@@ -73,7 +72,7 @@ def extrair_metadados_binario(bytes_binario: bytes) -> dict:
         elif wmi.startswith(("WDD", "WDB")): metadados["Fabricante"] = "MERCEDES-BENZ"
         elif wmi.startswith(("1C4", "1J4")): metadados["Fabricante"] = "JEEP / CHRYSLER"
 
-    # 4. Part Numbers GM Delco (8 dígitos numéricos: 12xxxxxx, 24xxxxxx, etc.)
+    # 4. Part Numbers GM Delco
     pns_gm = list(dict.fromkeys(re.findall(r'\b(?:12|24|55|13|28|84|92)\d{6}\b', texto_completo)))
     if pns_gm:
         if len(pns_gm) >= 1: metadados["Software Nr."] = pns_gm[0]
@@ -81,7 +80,7 @@ def extrair_metadados_binario(bytes_binario: bytes) -> dict:
         if len(pns_gm) >= 3: metadados["Software Upgrade Nr."] = pns_gm[2]
         if "Fabricante" not in metadados: metadados["Fabricante"] = "CHEVROLET US/EU/SAM"
 
-    # 5. Números Bosch (1037xxxxxx / 0281xxxxxx / 0261xxxxxx)
+    # 5. Números Bosch
     pns_bosch_sw = re.findall(r'\b1037\d{6}\b', texto_completo)
     pns_bosch_hw = re.findall(r'\b0281\d{6}\b|\b0261\d{6}\b', texto_completo)
     if pns_bosch_sw and "Software Nr." not in metadados:
@@ -90,7 +89,7 @@ def extrair_metadados_binario(bytes_binario: bytes) -> dict:
     if pns_bosch_hw and "Hardware Nr." not in metadados:
         metadados["Hardware Nr."] = pns_bosch_hw[0]
 
-    # 6. Offsets Físicos Fixos (Fallback caso não ache por Regex)
+    # 6. Offsets Físicos Fixos
     if "Hardware Nr." not in metadados and len(bytes_binario) > 0x400:
         if metadados.get("Fabricante") == "BOSCH":
             hw_str = bytes_binario[0x200:0x20A].decode("ascii", errors="ignore").strip()
@@ -112,14 +111,12 @@ def extrair_metadados_binario(bytes_binario: bytes) -> dict:
             metadados["Protocolo"] = f"DELCO {planta} GEN2"
             if "Fabricante" not in metadados: metadados["Fabricante"] = "CHEVROLET US/EU/SAM"
 
-    # Versão Hardware específica (ex: R1171650000000Z5)
     hw_vers = re.findall(r'\bR117\w+|\b[A-Z]\d{12,16}[Z0-9]\b', texto_completo)
     if hw_vers:
         metadados["Versão Hardware"] = hw_vers[0]
 
     metadados["Número de identificação único"] = f"{sum(bytes_binario[:1000]):04X}{len(bytes_binario):08X}"
     
-    # 8. Consulta de Modelo no Banco de Dados pelo Software Nr.
     sw_id = metadados.get("Software Nr.")
     if sw_id and sw_id != "N/A":
         try:
@@ -135,7 +132,6 @@ def extrair_metadados_binario(bytes_binario: bytes) -> dict:
     return metadados
 
 def processar_info_race(conteudo_texto: str) -> dict:
-    """Lê o texto gerado pelo Dimsport Race (.txt opcional)."""
     metadados = {}
     linhas = conteudo_texto.splitlines()
     for linha in linhas:
@@ -153,14 +149,12 @@ def processar_info_race(conteudo_texto: str) -> dict:
     return metadados
 
 def renderizar_aba_info_race(metadados: dict, imagem_bytes: bytes = None):
-    """Renderiza o painel visual com os dados extraídos da ECU e imagem se anexada."""
     if not metadados and not imagem_bytes:
         st.info("ℹ️ Carregue um arquivo .ORI, .TXT, .BIN, .HEX ou uma Imagem para visualizar os metadados da ECU.")
         return
 
     st.markdown("### 📋 Metadados e Informações do Arquivo ECU")
     
-    # Exibe imagem da ECU caso tenha sido enviada
     if imagem_bytes:
         st.markdown("#### 🖼️ Imagem / Etiqueta da ECU Anexada")
         st.image(imagem_bytes, caption="Anexo da Leitura da ECU", use_container_width=True)
@@ -320,7 +314,7 @@ def carregar_arquivos_hex_por_id(hist_id: int):
 # ==========================================
 # 3. RENDERIZAÇÃO DA VIEW PRINCIPAL
 # ==========================================
-def render_eeprom():
+def render_hex_compare():
     if "zoom_janela" not in st.session_state: st.session_state.zoom_janela = 256
     if "view_addr_atual" not in st.session_state: st.session_state.view_addr_atual = 0
 
@@ -450,7 +444,6 @@ def render_eeprom():
         with col1: arq_original = st.file_uploader("📂 Arquivo Original (.ori, .bin, .hex)", type=["bin", "hex", "ori", "mod", "dat"])
         with col2: arq_modificado = st.file_uploader("📂 Arquivo Modificado (.mod, .bin, .hex)", type=["bin", "hex", "ori", "mod", "dat"])
         
-        # ACEITA TXT, HEX, BIN, ORI E IMAGENS (PNG, JPG, JPEG, BMP, WEBP)
         with col3: arq_race_txt = st.file_uploader("📋 Info Race / Anexo (txt, hex, bin, ori, imagem)", type=["txt", "hex", "bin", "ori", "png", "jpg", "jpeg", "bmp", "webp"], key="arq_race_anexo")
         
         info_veiculo = st.text_input("🚙 Identificação/Modelo da ECU (Opcional)", placeholder="Ex: Chevrolet S10 2.5 Flex Delco E80")
@@ -461,20 +454,16 @@ def render_eeprom():
                     bytes_orig = arq_original.read()
                     bytes_mod = arq_modificado.read()
                     
-                    # Extração automática dos metadados direto do arquivo .ORI
                     metadados_finais = extrair_metadados_binario(bytes_orig)
                     
                     imagem_anexo_bytes = None
-                    # Processamento do anexo opcional
                     if arq_race_txt:
                         nome_ext = arq_race_txt.name.lower()
                         conteudo_anexo = arq_race_txt.read()
                         
-                        # Se for imagem
                         if any(nome_ext.endswith(ext) for ext in [".png", ".jpg", ".jpeg", ".bmp", ".webp"]):
                             imagem_anexo_bytes = conteudo_anexo
                         else:
-                            # Se for arquivo binário/ORI/HEX/BIN ou TXT
                             meta_bin_extra = extrair_metadados_binario(conteudo_anexo)
                             metadados_finais.update(meta_bin_extra)
                             
@@ -724,3 +713,6 @@ def render_eeprom():
         st.markdown("### 🔍 Detalhamento Técnico Completo (Tabela Hexadecimal)")
         df_diff = pd.DataFrame([{k: v for k, v in d.items() if k != "EnderecoInt"} for d in dados['diffs']])
         st.dataframe(df_diff, use_container_width=True, height=350 if expandir_graficos else 250)
+
+# Alias para compatibilidade caso outro módulo tente importar como render_eeprom
+render_eeprom = render_hex_compare
