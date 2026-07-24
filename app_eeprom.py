@@ -25,7 +25,7 @@ from views.obd2_view import render_obd2
 from views.adm_view import render_adm
 
 # ==========================================
-# 1. INJEÇÃO CSS GLOBAL CORRIGIDA
+# 1. INJEÇÃO CSS GLOBAL (BOTÕES E CHIP ASSISTANT)
 # ==========================================
 st.markdown("""
     <style>
@@ -33,15 +33,24 @@ st.markdown("""
     html, body, [class*="css"] { overflow-x: hidden; }
     .block-container { padding-top: 2rem; max-width: 1200px; }
     
-    /* Botões Globais Nativo do Streamlit (st.button) */
+    /* =========================================================
+       TODOS OS BOTÕES DO SISTEMA (Sidebar, Hub e Telas) 
+       ========================================================= */
     div[data-testid="stButton"] button {
-        border-radius: 10px !important;
-        font-weight: 600 !important;
-        transition: all 0.25s ease-in-out !important;
+        background: linear-gradient(135deg, #FF8C00 0%, #E65100 100%) !important;
+        color: white !important;
+        border: none !important;
+        border-radius: 50px !important;
+        padding: 10px 25px !important;
+        font-weight: bold !important;
+        font-size: 16px !important;
+        box-shadow: 0 8px 20px rgba(230, 81, 0, 0.4) !important;
+        transition: all 0.3s ease !important;
     }
     div[data-testid="stButton"] button:hover {
-        transform: translateY(-2px) !important;
-        box-shadow: 0 6px 15px rgba(0,0,0,0.3) !important;
+        transform: translateY(-3px) scale(1.02) !important;
+        box-shadow: 0 12px 25px rgba(230, 81, 0, 0.6) !important;
+        color: white !important;
     }
 
     /* Cartões Grandes do Hub Visual */
@@ -87,14 +96,17 @@ st.markdown("""
     .locked-main-logo:hover { transform: scale(1.03) !important; }
     
     .stSlider > div[data-baseweb="slider"] [data-testid="stTickBar"] + div,
-    .stSlider > div[data-baseweb="slider"] [role="slider"] { background-color: #9C27B0 !important; border-color: #9C27B0 !important; }
-    div.stSlider > div[data-baseweb="slider"] > div > div > div { background-color: #9C27B0 !important; }
+    .stSlider > div[data-baseweb="slider"] [role="slider"] { background-color: #FF8C00 !important; border-color: #FF8C00 !important; }
+    div.stSlider > div[data-baseweb="slider"] > div > div > div { background-color: #FF8C00 !important; }
     
-    div[data-baseweb="select"] { border-radius: 8px !important; border: 1px solid rgba(255,255,255,0.1) !important; }
+    div[data-baseweb="select"] { border-radius: 8px !important; border: 1px solid rgba(255,255,255,0.1) !important; transition: all 0.2s ease-in-out !important; }
+    div[data-baseweb="select"]:focus-within, div[data-baseweb="select"]:hover { border-color: #FF8C00 !important; box-shadow: 0 0 0 2px rgba(255, 140, 0, 0.2) !important; }
     .stNumberInput input, .stTextInput input { border-radius: 8px !important; background-color: #1A1A1A !important; border: 1px solid rgba(255,255,255,0.1) !important; color: #FFFFFF !important; }
+    .stNumberInput input:focus, .stTextInput input:focus { border-color: #FF8C00 !important; box-shadow: 0 0 0 2px rgba(255, 140, 0, 0.2) !important; }
     
-    /* === CORREÇÃO DO BOTÃO FLUTUANTE CHIP (POPOVER) === */
-    /* 1. Fixa a área do Popover no canto inferior direito sem esticar */
+    /* =========================================================
+       BOTÃO FLUTUANTE DO ASSISTENTE CHIP (POPOVER)
+       ========================================================= */
     div[data-testid="stPopover"] {
         position: fixed !important;
         bottom: 25px !important;
@@ -103,8 +115,6 @@ st.markdown("""
         width: 60px !important;
         height: 60px !important;
     }
-
-    /* 2. Aplica o formato circular apenas no BOTÃO do Popover */
     div[data-testid="stPopover"] > button {
         background: linear-gradient(135deg, #FF8C00 0%, #E65100 100%) !important;
         color: #FFFFFF !important;
@@ -121,8 +131,6 @@ st.markdown("""
         box-shadow: 0 8px 25px rgba(230, 81, 0, 0.7) !important;
         transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1) !important;
     }
-
-    /* 3. Ajuste do ícone/emoji dentro do botão flutuante */
     div[data-testid="stPopover"] > button p,
     div[data-testid="stPopover"] > button span {
         font-size: 28px !important;
@@ -130,14 +138,10 @@ st.markdown("""
         line-height: 1 !important;
         color: #FFFFFF !important;
     }
-
-    /* 4. Efeito Hover no botão flutuante */
     div[data-testid="stPopover"] > button:hover {
         transform: scale(1.12) translateY(-3px) !important;
         box-shadow: 0 12px 30px rgba(230, 81, 0, 0.9) !important;
     }
-
-    /* 5. Mantém a janela pop-up de chat com estilo limpo sem esticar */
     div[data-testid="stPopoverBody"] {
         max-width: 380px !important;
         border-radius: 16px !important;
@@ -281,3 +285,7 @@ with st.popover("🤖"):
         
         st.session_state.chat_historico.append({"role": "assistant", "content": resp})
         st.rerun()
+
+# Bloco de execução principal (Opcional no Streamlit, mas garante consistência caso executado via python direto)
+if __name__ == "__main__":
+    pass
