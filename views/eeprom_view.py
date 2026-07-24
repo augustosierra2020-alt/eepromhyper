@@ -320,7 +320,7 @@ def carregar_arquivos_hex_por_id(hist_id: int):
 # ==========================================
 # 3. RENDERIZAÇÃO DA VIEW PRINCIPAL
 # ==========================================
-def render_hex_compare():
+def render_eeprom():
     if "zoom_janela" not in st.session_state: st.session_state.zoom_janela = 256
     if "view_addr_atual" not in st.session_state: st.session_state.view_addr_atual = 0
 
