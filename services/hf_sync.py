@@ -23,16 +23,13 @@ def sincronizar_nuvem_para_local():
     
     try:
         # 1. Resgata e copia o eeprom_master.db (COM TRAVA CONTRA SOBRESCRITA)
-        pasta_core = os.path.join(BASE_DIR, "core")
-        os.makedirs(pasta_core, exist_ok=True)
-        db_core_path = os.path.join(pasta_core, "eeprom_master.db")
+        # CORREÇÃO: Agora aponta única e exclusivamente para a raiz do projeto
         db_raiz_path = os.path.join(BASE_DIR, "eeprom_master.db")
 
-        # Só faz o download se NÃO houver banco local na raiz ou na pasta core
-        if not os.path.exists(db_core_path) and not os.path.exists(db_raiz_path):
+        # Só faz o download se NÃO houver banco local na raiz
+        if not os.path.exists(db_raiz_path):
             try:
                 caminho_tmp_db = hf_hub_download(repo_id=repo_id, filename="eeprom_master.db", repo_type="dataset", token=HF_TOKEN)
-                shutil.copy2(caminho_tmp_db, db_core_path)
                 shutil.copy2(caminho_tmp_db, db_raiz_path)
                 print("[HF Sync] ✅ eeprom_master.db baixado e aplicado com sucesso!")
             except Exception as e:
@@ -77,9 +74,8 @@ def executar_backup_sincrono():
         api = HfApi(token=HF_TOKEN)
         repo_id = HF_DATASET_REPO
 
-        caminho_db = os.path.join(BASE_DIR, "core", "eeprom_master.db")
-        if not os.path.exists(caminho_db):
-            caminho_db = os.path.join(BASE_DIR, "eeprom_master.db")
+        # CORREÇÃO: Busca e faz o upload exclusivamente do banco mestre na raiz
+        caminho_db = os.path.join(BASE_DIR, "eeprom_master.db")
             
         if os.path.exists(caminho_db):
             api.upload_file(path_or_fileobj=caminho_db, path_in_repo="eeprom_master.db", repo_id=repo_id, repo_type="dataset")
