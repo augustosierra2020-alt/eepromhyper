@@ -3,9 +3,8 @@ import pandas as pd
 import io
 import os
 import re
-import time
-import sqlite3
 from datetime import datetime
+from core.db import get_db_connection
 from services.hf_sync import backup_local_para_nuvem_async
 from docx import Document
 from docx.enum.text import WD_ALIGN_PARAGRAPH
@@ -13,19 +12,7 @@ from docx.shared import Pt, RGBColor
 
 BASE_DIR = os.path.abspath(os.path.dirname(os.path.dirname(__file__)))
 
-# ==========================================
-# CONEXÃO ISOLADA E SEGURA
-# ==========================================
-def conectar_db_seguro():
-    """Garante uma conexão nova e exclusiva para evitar o erro de 'closed database'"""
-    db_path = os.path.join(BASE_DIR, "eeprom_master.db")
-    conn = sqlite3.connect(db_path, timeout=30.0)
-    conn.execute("PRAGMA foreign_keys = ON;")
-    return conn
-
-# ==========================================
-# REGRAS DE ENGENHARIA AUTOMOTIVA
-# ==========================================
+# Regras de Engenharia Automotiva
 def calcular_valor_inicial(linha):
     descricao = str(linha.get("Nome arquivo", linha.get("Descrição", ""))).upper().strip()
     veiculo = str(linha.get("Fabricante", linha.get("Veículo", ""))).upper().strip()
@@ -102,13 +89,9 @@ def modificar_modelo_docx(modelo_bytes, flash_point, cliente_nome, city, contato
     target.seek(0)
     return target
 
-# ==========================================
-# RENDERIZAÇÃO INTERFACE GESTÃO E OS
-# ==========================================
 def render_gestao_os():
     st.title("📊 Gestão Estrutural & Ordens de Serviço (OS)")
     
-    # Inicializadores de Estado Protegidos
     if "df_filtrado" not in st.session_state: st.session_state.df_filtrado = None
     if "os_mes_selecionado" not in st.session_state: st.session_state.os_mes_selecionado = ""
     if "os_cliente_selecionado" not in st.session_state: st.session_state.os_cliente_selecionado = ""
@@ -122,14 +105,11 @@ def render_gestao_os():
         "📊 Painel"
     ])
     
-    # Abrimos a conexão de forma segura usando bloco Try/Finally
-    conn = conectar_db_seguro()
+    conn = get_db_connection()
     try:
         cursor = conn.cursor()
 
-        # ====================================================
-        # ABA 1: PROCESSAMENTO E EXTRAÇÃO AUTOMATIZADA
-        # ====================================================
+        # ABA 1: PROCESSAMENTO
         with aba1:
             st.subheader("Processamento Inteligente (Suporte a Múltiplos Arquivos)")
             arquivos_carregados = st.file_uploader("Arraste uma ou mais planilhas de faturamento:", type=["xlsx", "xls", "csv"], accept_multiple_files=True)
@@ -182,11 +162,23 @@ def render_gestao_os():
                 except Exception as e: 
                     st.error(f"Erro no processamento da planilha: {e}")
 
-        # ====================================================
-        # ABA 2: EMISSOR DE OS INDIVIDUAL/LOTE VIA DOCX
-        # ====================================================
+        # ABA 2: EMISSOR DE OS E DOWNLOAD
         with aba2:
             st.subheader("📄 Emissor de Ordem de Serviço")
+            
+            # --- NOVO: BOTÃO DE DOWNLOAD DA PLANILHA FILTRADA (MEMÓRIA) ---
+            if st.session_state.df_filtrado is not None and not st.session_state.df_filtrado.empty:
+                st.markdown("#### 📥 Exportar Planilha Processada")
+                st.caption("Baixe a planilha completa com os filtros e valores calculados (sem linhas de TOTAL).")
+                try:
+                    buf = io.BytesIO()
+                    st.session_state.df_filtrado.to_excel(buf, index=False, engine='openpyxl')
+                    st.download_button("📊 Baixar Planilha FP Filtrada (.xlsx)", data=buf.getvalue(), file_name="Planilha_FP_Filtrada.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
+                except Exception:
+                    csv_data = st.session_state.df_filtrado.to_csv(index=False, sep=';', decimal=',', encoding='utf-8-sig')
+                    st.download_button("📊 Baixar Planilha FP Filtrada (.csv)", data=csv_data, file_name="Planilha_FP_Filtrada.csv", mime="text/csv", use_container_width=True)
+                st.markdown("---")
+            
             modelo_word = st.file_uploader("Selecione o arquivo de Template .docx:", type=["docx"])
             if st.session_state.df_filtrado is None or st.session_state.df_filtrado.empty: 
                 st.info("Carregue e filtre uma planilha na aba anterior primeiro.")
@@ -232,9 +224,7 @@ def render_gestao_os():
                         backup_local_para_nuvem_async()
                         st.success(f"✅ OS blindada na biblioteca de arquivos digitais do parceiro {fp_sel}!")
 
-        # ====================================================
-        # ABA 3: PASTAS DIGITAIS DOS CLIENTES (VISÃO MENSAL)
-        # ====================================================
+        # ABA 3: PASTAS MENSAIS E DOWNLOAD
         with aba3_mensal:
             cursor.execute("SELECT DISTINCT mes_ano FROM planilhas_mensais")
             p1 = [r[0] for r in cursor.fetchall()]
@@ -244,7 +234,6 @@ def render_gestao_os():
 
             if st.session_state.os_mes_selecionado == "":
                 st.subheader("📅 Central Histórica: Pastas por Mês")
-                st.markdown("### Selecione o Período Mensal para gerenciar as pastas dos parceiros:")
                 if not lista_meses_arquivados: st.info("Nenhuma pasta ou faturamento arquivado até o momento.")
                 else:
                     for i in range(0, len(lista_meses_arquivados), 4):
@@ -254,7 +243,7 @@ def render_gestao_os():
                                 m_folder = lista_meses_arquivados[i + j]
                                 with cols_m[j]:
                                     with st.container(border=True):
-                                        st.markdown(f"<div style='display: flex; justify-content: center; align-items: center; height: 110px; width: 100%; margin-bottom: 10px; background: linear-gradient(135deg, #1E88E5 0%, #0D47A1 100%); border-radius: 12px;'><p style='text-align:center; font-weight:bold; color:#FFFFFF; margin:0; font-size: 1.1rem;'>📅 {m_folder}</p></div>", unsafe_allow_html=True)
+                                        st.markdown(f"<div style='display: flex; justify-content: center; align-items: center; height: 110px; width: 100%; margin-bottom: 10px; background: linear-gradient(135deg, #1E88E5 0%, #0D47A1 100%); border-radius: 12px;'><p style='text-align:center; font-weight:bold; color:#FFFFFF; margin:0;'>📅 {m_folder}</p></div>", unsafe_allow_html=True)
                                         if st.button("Abrir Pasta Mensal", key=f"f_m_{m_folder}", use_container_width=True):
                                             st.session_state.os_mes_selecionado = m_folder
                                             st.session_state.os_cliente_selecionado = ""
@@ -272,11 +261,25 @@ def render_gestao_os():
                 row_json = cursor.fetchone()
                 
                 c_pl = []
+                df_m = None # Armazena o dataframe da planilha do mês
                 if row_json:
                     try: 
                         df_m = pd.read_json(io.StringIO(row_json[0]))
                         if "Flash Point" in df_m.columns: c_pl = df_m["Flash Point"].dropna().unique().tolist()
                     except: pass
+
+                # --- NOVO: BOTÃO DE DOWNLOAD DA PLANILHA MENSAL FILTRADA (BANCO DE DADOS) ---
+                if df_m is not None and not df_m.empty:
+                    st.markdown("#### 📥 Planilha Consolidada do Mês")
+                    st.caption("Baixe a planilha FP filtrada correspondente a este fechamento mensal.")
+                    try:
+                        buf_m = io.BytesIO()
+                        df_m.to_excel(buf_m, index=False, engine='openpyxl')
+                        st.download_button(f"📊 Baixar Planilha Filtrada ({st.session_state.os_mes_selecionado}).xlsx", data=buf_m.getvalue(), file_name=f"Planilha_FP_{st.session_state.os_mes_selecionado}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
+                    except Exception:
+                        csv_m = df_m.to_csv(index=False, sep=';', decimal=',', encoding='utf-8-sig')
+                        st.download_button(f"📊 Baixar Planilha Filtrada ({st.session_state.os_mes_selecionado}).csv", data=csv_m, file_name=f"Planilha_FP_{st.session_state.os_mes_selecionado}.csv", mime="text/csv", use_container_width=True)
+                    st.markdown("---")
                 
                 clientes_do_mes = sorted(list(set([str(c).strip().upper() for c in (c_os + c_pl) if c])))
 
@@ -291,7 +294,7 @@ def render_gestao_os():
                                     c_code = clientes_do_mes[i + j]
                                     with cols_c[j]:
                                         with st.container(border=True):
-                                            st.markdown(f"<div style='display: flex; justify-content: center; align-items: center; height: 90px; width: 100%; margin-bottom: 10px; background: linear-gradient(135deg, #8E24AA 0%, #4A148C 100%); border-radius: 12px;'><p style='text-align:center; font-weight:bold; color:#FFFFFF; margin:0; font-size: 1rem;'>📁 {c_code}</p></div>", unsafe_allow_html=True)
+                                            st.markdown(f"<div style='display: flex; justify-content: center; align-items: center; height: 90px; width: 100%; margin-bottom: 10px; background: linear-gradient(135deg, #8E24AA 0%, #4A148C 100%); border-radius: 12px;'><p style='text-align:center; font-weight:bold; color:#FFFFFF; margin:0;'>📁 {c_code}</p></div>", unsafe_allow_html=True)
                                             if st.button(f"Ver Pasta de {c_code}", key=f"f_c_{c_code}", use_container_width=True):
                                                 st.session_state.os_cliente_selecionado = c_code; st.rerun()
                 else:
@@ -308,7 +311,7 @@ def render_gestao_os():
                         for doc_id, doc_mes, doc_nome, doc_bytes, doc_val in arquivos_cliente:
                             with st.container(border=True):
                                 col_f1, col_f2, col_f3 = st.columns([4, 1, 1])
-                                col_f1.write(f"📄 **{doc_nome}** \n\n📅 Referência: `{doc_mes}` | 💰 Faturamento da OS: **R$ {doc_val:,.2f}**")
+                                col_f1.write(f"📄 **{doc_nome}** \n\n📅 Referência: `{doc_mes}` | 💰 Faturamento: **R$ {doc_val:,.2f}**")
                                 col_f2.download_button("📥 Baixar Documento", data=doc_bytes, file_name=doc_nome, mime="application/octet-stream", key=f"dl_f_{doc_id}", use_container_width=True)
                                 if col_f3.button("🗑️ Excluir", key=f"del_f_{doc_id}", use_container_width=True):
                                     cursor.execute("DELETE FROM os_salvas WHERE id = ?", (doc_id,))
@@ -317,7 +320,7 @@ def render_gestao_os():
                                     st.rerun()
 
                     st.markdown("---")
-                    st.markdown("### Anexar Manualmente Documento Adicional ao Parceiro (Neste Mês)")
+                    st.markdown("### Anexar Manualmente Documento Adicional ao Parceiro")
                     up_manual = st.file_uploader("Arraste ordens assinadas ou laudos mecânicos:", key="up_manual_shared")
                     val_m = st.number_input("Valor do Serviço Anexo (R$):", value=0.0, step=50.0)
                     
@@ -326,15 +329,11 @@ def render_gestao_os():
                             cursor.execute("INSERT INTO os_salvas (fp_codigo, mes_ano, nome_arquivo, dados_bytes, valor_total) VALUES (?, ?, ?, ?, ?)", (st.session_state.os_cliente_selecionado, st.session_state.os_mes_selecionado, up_manual.name, up_manual.read(), float(val_m)))
                             conn.commit()
                             backup_local_para_nuvem_async()
-                            st.success("Documento injetado e sincronizado com a nuvem!"); st.rerun()
+                            st.success("Documento injetado e sincronizado!"); st.rerun()
 
-        # ====================================================
-        # ABA 4: BACKUP DE CLIENTES (PASTA VIVA E UNIFICADA DO BANCO)
-        # ====================================================
+        # ABA 4: BACKUP DE CLIENTES
         with aba3_geral:
             st.subheader("💾 Backup de Clientes")
-            st.caption("Acesse diretamente a pasta viva e centralizada de cada cliente, contendo todo o histórico de serviços independente do mês.")
-            
             cursor.execute("SELECT DISTINCT fp_codigo FROM os_salvas")
             c_os_all = [r[0] for r in cursor.fetchall()]
             cursor.execute("SELECT DISTINCT fp_codigo FROM clientes_fp")
@@ -354,7 +353,7 @@ def render_gestao_os():
                                 cli = todos_clientes_com_os[i + j]
                                 with cols_bc[j]:
                                     with st.container(border=True):
-                                        st.markdown(f"<div style='display: flex; justify-content: center; align-items: center; height: 90px; width: 100%; margin-bottom: 10px; background: linear-gradient(135deg, #FF8C00 0%, #E65100 100%); border-radius: 12px;'><p style='text-align:center; font-weight:bold; color:#FFFFFF; margin:0; font-size: 1rem;'>👤 {cli}</p></div>", unsafe_allow_html=True)
+                                        st.markdown(f"<div style='display: flex; justify-content: center; align-items: center; height: 90px; width: 100%; margin-bottom: 10px; background: linear-gradient(135deg, #FF8C00 0%, #E65100 100%); border-radius: 12px;'><p style='text-align:center; font-weight:bold; color:#FFFFFF; margin:0;'>👤 {cli}</p></div>", unsafe_allow_html=True)
                                         if st.button(f"Abrir Pasta de {cli}", key=f"bkp_btn_{cli}", use_container_width=True):
                                             st.session_state.backup_cliente_sel = cli
                                             st.rerun()
@@ -370,7 +369,7 @@ def render_gestao_os():
                 cursor.execute("SELECT id, mes_ano, nome_arquivo, dados_bytes, valor_total FROM os_salvas WHERE fp_codigo = ? ORDER BY id DESC", (cli_atual,))
                 todo_historico_cliente = cursor.fetchall()
                 
-                st.markdown(f"#### Histórico Completo de Serviços Anexados ({len(todo_historico_cliente)} arquivo(s))")
+                st.markdown(f"#### Histórico Completo ({len(todo_historico_cliente)} arquivo(s))")
                 if not todo_historico_cliente:
                     st.info("Nenhuma OS salva nesta pasta viva ainda.")
                 else:
@@ -383,11 +382,9 @@ def render_gestao_os():
                                 cursor.execute("DELETE FROM os_salvas WHERE id = ?", (doc_id,))
                                 conn.commit(); backup_local_para_nuvem_async(); st.rerun()
 
-        # ====================================================
-        # ABA 5: MONITORAMENTO FINANCEIRO E AUDITORIA MENSAL
-        # ====================================================
+        # ABA 5: MONITORAMENTO FINANCEIRO
         with aba4:
-            st.subheader("📊 Painel de Monitoramento Mensal (Réplica de Planilhas)")
+            st.subheader("📊 Painel de Monitoramento Mensal")
             cursor.execute("SELECT DISTINCT mes_ano FROM planilhas_mensais")
             p_sheets = [r[0] for r in cursor.fetchall()]
             cursor.execute("SELECT DISTINCT mes_ano FROM os_salvas")
@@ -412,16 +409,16 @@ def render_gestao_os():
                         st.markdown("📈 **Faturamento Planilha Base (Serviços Totais)**")
                         st.markdown(f"<h2 style='color:#1E88E5;'>R$ {tot_p:,.2f}</h2>", unsafe_allow_html=True)
                     with nc2.container(border=True):
-                        st.markdown("📄 **Valor Capturado em OS Individuais Emitidas**")
+                        st.markdown("📄 **Valor Capturado em OS Emitidas**")
                         st.markdown(f"<h2 style='color:#EA580C;'>R$ {tot_os:,.2f}</h2>", unsafe_allow_html=True)
                     
                     if row_p and row_p[0]:
-                        st.markdown(f"### 📋 Planilha FP Original Arquivada para Consulta Coletiva ({mes_escolhido})")
+                        st.markdown(f"### 📋 Planilha FP Original Arquivada ({mes_escolhido})")
                         try:
                             df_salvo = pd.read_json(io.StringIO(row_p[0]))
                             st.dataframe(df_salvo, use_container_width=True)
                         except Exception as err:
-                            st.error(f"Erro ao reestruturar planilha extraída: {err}")
+                            st.error(f"Erro ao reestruturar planilha: {err}")
 
                     if st.button("🗑️ Destruir Registro Mensal Deste Período (Ação Irreversível)", use_container_width=True):
                         cursor.execute("DELETE FROM planilhas_mensais WHERE mes_ano = ?", (mes_escolhido,))
@@ -429,7 +426,5 @@ def render_gestao_os():
                         backup_local_para_nuvem_async()
                         st.warning("Faturamento apagado definitivamente da nuvem."); st.rerun()
 
-    # O bloco "finally" SEMPRE executará quando a função terminar ou o app recarregar
     finally:
-        if 'conn' in locals():
-            conn.close()
+        conn.close()
