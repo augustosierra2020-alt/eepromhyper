@@ -14,7 +14,7 @@ st.set_page_config(
 
 # Importação do Banco de Dados e Serviços
 from core.db import init_db
-from services.hf_sync import sincronizar_nuvem_para_local
+from services.hf_sync import sincronizar_nuvem_para_local, backup_local_para_nuvem_async
 
 # Importação dos Módulos / Telas (Views)
 from views.home import render_home
@@ -152,17 +152,26 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 2. INICIALIZAÇÃO DE ESTADOS E PROTEÇÕES
+# 2. INICIALIZAÇÃO BLINDADA E ESTADOS
 # ==========================================
 if "startup_ok" not in st.session_state:
-    sincronizar_nuvem_para_local()  # Baixa banco da nuvem
-    init_db()                       # Inicializa banco SQLite
-    st.session_state.startup_ok = True
-    st.session_state.app_mode = "HOME"
-    st.session_state.adm_logged_in = False
-    st.session_state.chat_historico = [
-        {"role": "assistant", "content": "Oi, eu sou o Chip! Como posso ajudar na oficina hoje?"}
-    ]
+    try:
+        # Tenta puxar a nuvem de forma explícita
+        sincronizar_nuvem_para_local()
+    except Exception as e:
+        st.error(f"⚠️ Atenção: Não foi possível conectar ao backup da nuvem. Detalhes: {e}")
+        
+    try:
+        # Garante a criação de tabelas apenas se elas não existirem
+        init_db()
+        st.session_state.startup_ok = True
+        st.session_state.app_mode = "HOME"
+        st.session_state.adm_logged_in = False
+        st.session_state.chat_historico = [
+            {"role": "assistant", "content": "Oi, eu sou o Chip! O sistema foi inicializado. Como posso ajudar na oficina hoje?"}
+        ]
+    except Exception as e:
+        st.error(f"⚠️ Erro ao preparar banco de dados local: {e}")
 
 # Variáveis Globais de Controle de Sessão
 if 'montadora_selecionada' not in st.session_state: st.session_state.montadora_selecionada = ""
@@ -198,7 +207,7 @@ def modal_login_adm():
             st.error("Credenciais inválidas. Tente novamente.")
 
 # ==========================================
-# 4. BARRA LATERAL (MENU DE NAVEGAÇÃO)
+# 4. BARRA LATERAL (MENU DE NAVEGAÇÃO E CONTROLE DE NUVEM)
 # ==========================================
 st.sidebar.title("🛡️ HyperTork Hub")
 
@@ -233,6 +242,27 @@ if st.sidebar.button("🔑 Adm Room", use_container_width=True):
         st.rerun()
     else: 
         modal_login_adm()
+
+# CONTROLES MANUAIS DE BACKUP PARA GARANTIA DE HISTÓRICO
+st.sidebar.markdown("---")
+st.sidebar.caption("☁️ **Controle Manual da Nuvem**")
+if st.sidebar.button("⬇️ Restaurar Backup", use_container_width=True):
+    with st.spinner("Puxando histórico da nuvem..."):
+        try:
+            sincronizar_nuvem_para_local()
+            st.toast("✅ Banco de dados restaurado com sucesso!", icon="☁️")
+            time.sleep(1)
+            st.rerun()
+        except Exception as e:
+            st.sidebar.error(f"Erro: {e}")
+
+if st.sidebar.button("⬆️ Forçar Envio", use_container_width=True):
+    with st.spinner("Enviando histórico atual..."):
+        try:
+            backup_local_para_nuvem_async()
+            st.toast("✅ Banco de dados enviado para a nuvem!", icon="🚀")
+        except Exception as e:
+            st.sidebar.error(f"Erro: {e}")
 
 # ==========================================
 # 5. ROTEADOR DE INTERFACES (VIEWS MODULARES)
@@ -286,6 +316,5 @@ with st.popover("🤖"):
         st.session_state.chat_historico.append({"role": "assistant", "content": resp})
         st.rerun()
 
-# Bloco de execução principal (Opcional no Streamlit, mas garante consistência caso executado via python direto)
 if __name__ == "__main__":
     pass

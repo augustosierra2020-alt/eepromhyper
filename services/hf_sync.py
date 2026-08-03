@@ -1,51 +1,83 @@
 import os
 import threading
 import shutil
+import sqlite3
 import logging
 from huggingface_hub import HfApi, hf_hub_download, snapshot_download
 
 HF_TOKEN = os.environ.get("HF_TOKEN")
 HF_DATASET_REPO = os.environ.get("HF_DATASET_REPO", "GrizzlyBear25/HyperTork_DB")
-
 BASE_DIR = os.path.abspath(os.path.dirname(os.path.dirname(__file__)))
+DB_PATH = os.path.join(BASE_DIR, "eeprom_master.db")
+
+def verificar_integridade_banco(caminho):
+    """
+    Entra no banco de dados para checar se ele tem dados reais.
+    Se for menor que 12KB ou não tiver tabelas, é considerado um 'Banco Fantasma' e deve ser ignorado.
+    """
+    if not os.path.exists(caminho):
+        return False
+        
+    if os.path.getsize(caminho) < 12000:
+        return False
+        
+    try:
+        conn = sqlite3.connect(caminho, timeout=5)
+        cursor = conn.cursor()
+        
+        # Verifica a estrutura mínima
+        cursor.execute("SELECT COUNT(*) FROM sqlite_master WHERE type='table'")
+        if cursor.fetchone()[0] < 3:
+            conn.close()
+            return False
+            
+        # Verifica se há dados na oficina
+        try:
+            cursor.execute("SELECT COUNT(*) FROM montadoras")
+            m_count = cursor.fetchone()[0]
+            cursor.execute("SELECT COUNT(*) FROM os_salvas")
+            os_count = cursor.fetchone()[0]
+        except Exception:
+            m_count, os_count = 0, 0
+            
+        conn.close()
+        
+        if m_count == 0 and os_count == 0:
+            return False # Banco estruturado, mas VAZIO.
+            
+        return True
+    except Exception:
+        return False
 
 def sincronizar_nuvem_para_local():
     """
-    Executada na inicialização do app. 
-    Puxa o eeprom_master.db (apenas se não existir localmente), a Fp.xlsx e as Logos da nuvem.
+    Puxa dados da nuvem COM TRAVA INTELIGENTE para ignorar bancos fantasmas do Git.
     """
     if not HF_TOKEN:
-        print("[HF Sync] Inicialização: HF_TOKEN não configurado. Trabalhando em modo local.")
+        print("[HF Sync] Modo local: HF_TOKEN ausente.")
         return
 
-    print(f"[HF Sync] Conectando ao Dataset: {HF_DATASET_REPO}...")
     repo_id = HF_DATASET_REPO
-    
     try:
-        # 1. Resgata e copia o eeprom_master.db (COM TRAVA CONTRA SOBRESCRITA)
-        # CORREÇÃO: Agora aponta única e exclusivamente para a raiz do projeto
-        db_raiz_path = os.path.join(BASE_DIR, "eeprom_master.db")
-
-        # Só faz o download se NÃO houver banco local na raiz
-        if not os.path.exists(db_raiz_path):
+        # PROTEÇÃO: Se não existir ou for um banco vazio, BAIXA da nuvem a força.
+        if not verificar_integridade_banco(DB_PATH):
+            print("[HF Sync] ⚠️ Banco local ausente ou VAZIO. Forçando download do cofre principal da nuvem...")
             try:
-                caminho_tmp_db = hf_hub_download(repo_id=repo_id, filename="eeprom_master.db", repo_type="dataset", token=HF_TOKEN)
-                shutil.copy2(caminho_tmp_db, db_raiz_path)
-                print("[HF Sync] ✅ eeprom_master.db baixado e aplicado com sucesso!")
+                caminho_tmp_db = hf_hub_download(repo_id=repo_id, filename="eeprom_master.db", repo_type="dataset", token=HF_TOKEN, force_download=True)
+                shutil.copy2(caminho_tmp_db, DB_PATH)
+                print("[HF Sync] ✅ eeprom_master.db original resgatado e aplicado com sucesso!")
             except Exception as e:
-                print(f"[HF Sync] ⚠️ Aviso: eeprom_master.db não encontrado no Dataset ou erro: {e}")
+                print(f"[HF Sync] ❌ Erro ao baixar o banco da nuvem: {e}")
         else:
-            print("[HF Sync] 🛡️ Banco local detectado. Download ignorado para proteger os dados atuais.")
+            print("[HF Sync] 🛡️ Banco local com dados detectado. Download bloqueado para proteger suas edições da sessão atual.")
 
-        # 2. Resgata a Planilha Fp.xlsx
+        # Sincroniza a Planilha Fp.xlsx
         try:
             caminho_tmp_fp = hf_hub_download(repo_id=repo_id, filename="Fp.xlsx", repo_type="dataset", token=HF_TOKEN)
             shutil.copy2(caminho_tmp_fp, os.path.join(BASE_DIR, "Fp.xlsx"))
-            print("[HF Sync] ✅ Fp.xlsx sincronizado com sucesso!")
-        except Exception as e:
-            print(f"[HF Sync] ⚠️ Aviso: Fp.xlsx não encontrado no Dataset ou erro: {e}")
+        except Exception: pass
             
-        # 3. Resgata a pasta de Logos
+        # Sincroniza a pasta de Logos
         try:
             caminho_tmp_logos = snapshot_download(repo_id=repo_id, repo_type="dataset", allow_patterns="Logos/*", token=HF_TOKEN)
             pasta_logos_tmp = os.path.join(caminho_tmp_logos, "Logos")
@@ -55,30 +87,29 @@ def sincronizar_nuvem_para_local():
             if os.path.exists(pasta_logos_tmp):
                 for arquivo in os.listdir(pasta_logos_tmp):
                     shutil.copy2(os.path.join(pasta_logos_tmp, arquivo), os.path.join(pasta_logos_local, arquivo))
-            print("[HF Sync] ✅ Logos sincronizadas com sucesso!")
-        except Exception as e:
-            print(f"[HF Sync] ⚠️ Aviso: Logos não encontradas no Dataset ou erro: {e}")
+        except Exception: pass
 
     except Exception as e:
-        print(f"[HF Sync] ❌ Falha crítica na sincronização inicial: {e}")
-
+        print(f"[HF Sync] ❌ Falha crítica na inicialização: {e}")
 
 def executar_backup_sincrono():
     """
-    Executa o backup completo dos arquivos locais para o Dataset do Hugging Face.
+    Executa o backup completo, MAS TRAVA se o banco local for inválido.
     """
     if not HF_TOKEN:
         return False, "Token HF_TOKEN ausente."
 
     try:
+        # TRAVA DE SEGURANÇA MÁXIMA: NUNCA envia um banco vazio para a nuvem
+        if not verificar_integridade_banco(DB_PATH):
+            msg = "Upload bloqueado: O sistema evitou o envio de um banco vazio para a nuvem."
+            print(f"[HF Sync] 🛡️ {msg}")
+            return False, msg
+
         api = HfApi(token=HF_TOKEN)
         repo_id = HF_DATASET_REPO
-
-        # CORREÇÃO: Busca e faz o upload exclusivamente do banco mestre na raiz
-        caminho_db = os.path.join(BASE_DIR, "eeprom_master.db")
-            
-        if os.path.exists(caminho_db):
-            api.upload_file(path_or_fileobj=caminho_db, path_in_repo="eeprom_master.db", repo_id=repo_id, repo_type="dataset")
+        
+        api.upload_file(path_or_fileobj=DB_PATH, path_in_repo="eeprom_master.db", repo_id=repo_id, repo_type="dataset")
 
         caminho_fp = os.path.join(BASE_DIR, "Fp.xlsx")
         if os.path.exists(caminho_fp):
@@ -88,11 +119,9 @@ def executar_backup_sincrono():
         if os.path.exists(caminho_logos) and len(os.listdir(caminho_logos)) > 0:
             api.upload_folder(folder_path=caminho_logos, path_in_repo="Logos", repo_id=repo_id, repo_type="dataset")
 
-        return True, "Backup total para o Dataset concluído com sucesso!"
-
+        return True, "Backup concluído com sucesso!"
     except Exception as e:
         return False, str(e)
-
 
 def backup_local_para_nuvem_async():
     thread = threading.Thread(target=executar_backup_sincrono, daemon=True)
